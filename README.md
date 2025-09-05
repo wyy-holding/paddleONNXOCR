@@ -66,6 +66,16 @@ if __name__ == '__main__':
 
     asyncio.run(main())
 ```
+单例调用
+```python
+from paddleONNXOCR import PredictSystem
+
+async def main():
+    predictor_system = PredictSystem()
+    await predictor_system.__aenter__()
+    return predictor_system
+# 外部拿到实力调用推理，参考api/__init__.py中的lifespan
+```
 
 默认情况下，会自动从modelscope下载以下模型:
 
