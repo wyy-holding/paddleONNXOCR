@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools >= 78.1.1", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paddle_onnxocr"
+version = "0.0.3"
+authors = [
+    { name = "wyy-holding", email = "944581678@qq.com" },
+]
+description = "paddleOCR的onnx实现"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "opencv-python-headless",
+    "shapely",
+    "pyclipper",
+    "onnxruntime",
+    "pillow",
+    "validators",
+    "aiohttp",
+    "psutil",
+    "deskew",
+    "modelscope"
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+
+[project.urls]
+Homepage = "https://github.com/pypa/sampleproject"
+Issues = "https://github.com/pypa/sampleproject/issues"
+
+[tool.setuptools]
+packages = { find = { where = ["."], include = ["paddleONNXOCR*"] } }
+
+
+[tool.setuptools.package-data]
+paddleONNXOCR = ["static/*.*"]

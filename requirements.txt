@@ -1,0 +1,16 @@
+opencv-python-headless
+shapely
+pyclipper
+onnxruntime
+pillow
+validators
+aiohttp
+psutil
+deskew
+modelscope
+# fastapi接口依赖
+pydantic
+fastapi
+uvicorn
+gunicorn
+loguru

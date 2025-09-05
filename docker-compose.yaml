@@ -1,0 +1,13 @@
+services:
+  ocr-server:
+    image: ocr-server:${TAG:-latest}
+    build: .
+    container_name: ocr-server
+    ports:
+      - "80:80"
+    restart: unless-stopped
+    logging:
+      driver: "local"
+      options:
+        max-size: "100m"
+        max-file: "200"
