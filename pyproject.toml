@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "paddle_onnxocr"
-version = "0.0.3"
+version = "0.0.4"
 authors = [
     { name = "wyy-holding", email = "944581678@qq.com" },
 ]
@@ -31,8 +31,8 @@ license = "MIT"
 license-files = ["LICEN[CS]E*"]
 
 [project.urls]
-Homepage = "https://github.com/pypa/sampleproject"
-Issues = "https://github.com/pypa/sampleproject/issues"
+Homepage = "https://github.com/wyy-holding/paddleONNXOCR"
+Issues = "https://github.com/wyy-holding/paddleONNXOCR/issues"
 
 [tool.setuptools]
 packages = { find = { where = ["."], include = ["paddleONNXOCR*"] } }

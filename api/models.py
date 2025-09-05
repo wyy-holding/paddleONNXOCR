@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 from pydantic import BaseModel, Field
 
-from paddleONNXOCR.predict.predict_system import OCRResult
+from paddleONNXOCR.predict.predict_system import OCRChunkResult
 
 
 class BaseResponse(BaseModel):
@@ -13,7 +13,7 @@ class BaseResponse(BaseModel):
 
 class OCRResultData(BaseModel):
     text: str | None = Field(default=None, description="ocr识别结果纯文本内容")
-    data: List[OCRResult] = Field(default="", description="识别结果列表")
+    data: List[OCRChunkResult] = Field(default="", description="识别结果列表")
 
 
 class OCRInput(BaseModel):

@@ -22,13 +22,15 @@ class PredictBase:
             callable_func: Callable | None = None
     ):
         """
+        :param model_name: 模型名称
         :param model_path: 模型路径
+        :param model_local_dir: 模型下载到本地路径
         :param providers: onnx providers，默认由于PaddleONNOCRXUtils.get_available_providers选择
-        :param session_options:
-        :param executor:
-        :param callable_func:
+        :param session_options: onnxruntime.SessionOptions对象
+        :param executor: 线程池
+        :param callable_func: 回调函数
         """
-        self.model_name = model_name.value
+        self.model_name = model_name
         self.model_path = model_path
         self.model_local_dir = model_local_dir
         self.providers = providers
@@ -126,9 +128,12 @@ class PredictBase:
         return await asyncio.gather(*tasks)
 
     async def download_model(self):
+        """
+        从modelscope下载onnx模型
+        """
         if self.model_path:
             return
-        model_path = Path(f"{self.model_local_dir}/{self.model_name}")
+        model_path = Path(f"{self.model_local_dir}/{self.model_name.value}")
         self.model_path = model_path
         if model_path.exists():
             return

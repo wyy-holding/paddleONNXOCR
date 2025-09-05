@@ -29,9 +29,8 @@ class OCRRecognizer(PredictBase):
             session_options: onnxruntime.SessionOptions | None = None,
             executor: ThreadPoolExecutor | None = None,
             charset_path: str = str(Path(__file__).parent.parent / "static/ppocrv5_dict.txt"),
-            rec_image_shape: str = "3,48,320",  # 与官网一致，形如 "3,48,320"
-            rec_batch_num: int = 6,  # 与官网一致
-            use_space_char: bool = True,  # 与官网一致
+            rec_image_shape: str = "3,48,320",
+            use_space_char: bool = True,
     ):
         """
         OCR识别器
@@ -41,12 +40,10 @@ class OCRRecognizer(PredictBase):
         :param executor: 进程池
         :param charset_path: 字典路径
         :param rec_image_shape: 图像形状
-        :param rec_batch_num: 批大小
         :param use_space_char: 是否使用空格字符
         """
         self.charset_path = charset_path
         self.rec_image_shape = rec_image_shape
-        self.rec_batch_num = rec_batch_num
         self.use_space_char = use_space_char
         self.imgH = None
         self.imgC = None

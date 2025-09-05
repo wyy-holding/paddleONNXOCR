@@ -22,6 +22,14 @@ class TextLineOrientationDetector(PredictBase):
             session_options: onnxruntime.SessionOptions = None,
             executor: ThreadPoolExecutor | None = None
     ):
+        """
+        :param model_name: 模型名称
+        :param model_path: 模型路径
+        :param model_local_dir: 模型下载到本地路径
+        :param providers: onnx providers，默认由于PaddleONNOCRXUtils.get_available_providers选择
+        :param session_options: onnxruntime.SessionOptions对象
+        :param executor: 线程池
+        """
         super().__init__(model_name, model_path, model_local_dir, providers, session_options, executor)
 
     def _preprocess_sync(
@@ -31,7 +39,7 @@ class TextLineOrientationDetector(PredictBase):
         """
         预处理 按配置文件 Resize(160,80) -> Normalize -> ToCHW
         :param image: 图像数据
-        :return:
+        :return: 处理后图像
         """
         if image.ndim == 3:
             if image.shape[2] == 4:
@@ -47,10 +55,16 @@ class TextLineOrientationDetector(PredictBase):
         image = numpy.expand_dims(image, axis=0).astype(numpy.float32)
         return image
 
-    def run_inference(self, blob: numpy.ndarray) -> numpy.ndarray:
+    def run_inference(
+            self,
+            blob: numpy.ndarray
+    ) -> numpy.ndarray:
         return self._run_inference_sync(blob)[0]
 
-    async def _run_inference(self, blob: numpy.ndarray) -> Dict[str, Any]:
+    async def _run_inference(
+            self,
+            blob: numpy.ndarray
+    ) -> Dict[str, Any]:
         try:
             loop = asyncio.get_event_loop()
             probs = await loop.run_in_executor(self.executor, self.run_inference, blob)

@@ -8,7 +8,6 @@ aiohttp
 psutil
 deskew
 modelscope
-# fastapi接口依赖
 pydantic
 fastapi
 uvicorn

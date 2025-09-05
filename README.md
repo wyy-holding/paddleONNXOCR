@@ -68,6 +68,7 @@ if __name__ == '__main__':
 ```
 
 默认情况下，会自动从modelscope下载以下模型:
+
 ```
 PP-LCNet_x0_25_text_line_ori_infer.onnx-->文本行方向检测模型
 PP-LCNet_x1_0_doc_ori.onnx->文档方向分类
@@ -84,7 +85,39 @@ from paddleONNXOCR.models_enum import DetModels, RecModels
 # 切换成server版本
 PredictSystem(det_model_name=DetModels.SERVER, rec_model_name=RecModels.SERVER)
 ```
+
+### 传递本地模型路径
+
+```python
+from paddleONNXOCR import PredictSystem
+
+PredictSystem(det_model_path="testDir/xxx.onnx")
+```
+
+### 模型启用
+
+```python
+from paddleONNXOCR import PredictSystem
+
+PredictSystem()
+# use_angle_cls: 启用文本放方向检测，默认True
+# use_deskew: 启用倾斜图像旋转矫正，默认False
+# use_uvdoc: 启用图像矫正，默认False
+# use_doc_cls: 启用图像方向分类，默认True
+```
+
+PS:具体参数请点到每一个方法内，有完整解释。
+
+# api接口服务
+提供了dokcer构建启动的方式.
+执行bash命令，自动构建docker服务启动.
+windows下请使用wsl子系统.
+```bash
+bash run.sh
+```
+
 ### 依赖项目
+
 ```
 opencv-python-headless
 shapely

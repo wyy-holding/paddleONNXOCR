@@ -208,6 +208,18 @@ class TextDetector(PredictBase):
             score_mode: Literal["fast", "slow"] = "fast",
             box_type: Literal["poly", "quad"] = "quad"
     ):
+        """
+        :param model_name: 模型名称
+        :param model_path: 模型路径
+        :param model_local_dir: 模型下载到本地路径
+        :param providers: onnx providers，默认由于PaddleONNOCRXUtils.get_available_providers选择
+        :param session_options: onnxruntime.SessionOptions对象
+        :param executor: 线程池
+        :param thresh: 检测阈值
+        :param box_thresh: 文本框阈值
+        :param max_candidates: 最大候选框数量
+        :param unclip_ratio: 非裁剪比例
+        """
         self.postprocess_op = DBPostProcess(
             thresh=thresh,
             box_thresh=box_thresh,

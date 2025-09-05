@@ -48,7 +48,7 @@ class PredictSystem:
             use_doc_cls: bool = True,
             cls_thresh: float = 0.5,
             drop_score: float = 0.3,
-            sort_boxes: bool = True,  # 是否对检测框排序
+            sort_boxes: bool = True,
             providers: Optional[List[str]] = None,
             session_options: Optional[onnxruntime.SessionOptions] = None,
             executor: Optional[ThreadPoolExecutor] = None,
@@ -58,9 +58,42 @@ class PredictSystem:
             det_db_unclip_ratio: float = 1.5,
             det_max_candidates: int = 1000,
             # 识别参数
-            rec_batch_num: int = 6,
             rec_image_shape: str = "3,48,320",
     ):
+        """
+        :param det_model_name 检测模型名称
+        :param cls_model_name 文本行方向分类模型名称
+        :param rec_model_name 文本识别模型名称
+        :param doc_cls_model_name 图像方向分类模型名称
+        :param uvdoc_model_name 图像矫正模型名称
+        :param det_model_path 检测模型本地路径
+        :param cls_model_path 文本行方向分类模型本地路径
+        :param rec_model_path 文本识别模型本地路径
+        :param doc_cls_model_path 图像方向分类模型本地路径
+        :param uvdoc_model_path 图像矫正模型本地路径
+        :param model_local_dir 模型下载到本地的保存路径
+        :param det_model 文本检测模型实例
+        :param cls_model 文本行方向分类模型实例
+        :param rec_model 文本识别模型实例
+        :param doc_cls_model 图像方向分类模型实例
+        :param uvdoc_model 图像矫正模型实例
+        :param charset_path 字典
+        :param use_angle_cls 是否启用文本行方向检测
+        :param use_deskew 是否启用倾斜图像转正
+        :param use_uvdoc 是否启用图像矫正
+        :param use_doc_cls 是否启用图像方向分类后旋转
+        :param cls_thresh 文本行方向检测阈值
+        :param drop_score 文本识别置信度最低值，低于该值抛弃
+        :param sort_boxes 是否对文本检测结果进行排序
+        :param providers: onnx providers，默认由于PaddleONNOCRXUtils.get_available_providers选择
+        :param session_options: onnxruntime.SessionOptions对象
+        :param executor: 线程池
+        :param det_db_thresh 文本检测阈值
+        :param det_db_box_thresh 文本框阈值
+        :param det_db_unclip_ratio 非裁剪比例
+        :param det_max_candidates 最大候选框数量
+        :param rec_image_shape 识别图像形状
+        """
         self.det_model_name = det_model_name
         self.cls_model_name = cls_model_name
         self.rec_model_name = rec_model_name
@@ -92,11 +125,13 @@ class PredictSystem:
         self.det_db_box_thresh = det_db_box_thresh
         self.det_db_unclip_ratio = det_db_unclip_ratio
         self.det_max_candidates = det_max_candidates
-        self.rec_batch_num = rec_batch_num
         self.rec_image_shape = rec_image_shape
         self._font_path = None
 
     async def _init_det_model(self):
+        """
+        初始化检测模型
+        """
         if self.det_model is None:
             self.det_model = TextDetector(
                 model_name=self.det_model_name,
@@ -113,6 +148,9 @@ class PredictSystem:
         await self.det_model.__aenter__()
 
     async def _init_cls_model(self):
+        """
+        初始化文本行检测模型
+        """
         if self.use_angle_cls:
             if self.cls_model is None:
                 self.cls_model = TextLineOrientationDetector(
@@ -128,6 +166,9 @@ class PredictSystem:
             self.cls_model = None
 
     async def _init_rec_model(self):
+        """
+        初始化文本识别模型
+        """
         if self.rec_model is None:
             self.rec_model = OCRRecognizer(
                 model_name=self.rec_model_name,
@@ -137,12 +178,14 @@ class PredictSystem:
                 session_options=self.session_options,
                 executor=self.executor,
                 charset_path=self.charset_path,
-                rec_batch_num=self.rec_batch_num,
                 rec_image_shape=self.rec_image_shape,
             )
         await self.rec_model.__aenter__()
 
     async def _init_doc_cls_model(self):
+        """
+        初始化图像方向分类模型
+        """
         if self.use_doc_cls:
             if self.doc_cls_model is None:
                 self.doc_cls_model = DocumentOrientationDetector(
@@ -156,6 +199,9 @@ class PredictSystem:
             await self.doc_cls_model.__aenter__()
 
     async def _init_uvdoc_model(self):
+        """
+        初始化图像矫正模型
+        """
         if self.use_uvdoc:
             if self.uvdoc_model is None:
                 self.uvdoc_model = DocumentRectifier(

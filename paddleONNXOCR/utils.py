@@ -482,7 +482,7 @@ class UtilsCommon:
             local_dir: str
     ):
         snapshot_download(
-            f'wyyHolding/{model_name}',
+            f'wyyHolding/{model_name.value}',
             local_dir=local_dir,
             allow_patterns=["*.onnx"]
         )

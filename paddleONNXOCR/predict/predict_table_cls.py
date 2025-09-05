@@ -28,6 +28,14 @@ class TableClassifier(PredictBase):
             session_options: onnxruntime.SessionOptions = None,
             executor: ThreadPoolExecutor | None = None
     ):
+        """
+        :param model_name: 模型名称
+        :param model_path: 模型路径
+        :param model_local_dir: 模型下载到本地路径
+        :param providers: onnx providers，默认由于PaddleONNOCRXUtils.get_available_providers选择
+        :param session_options: onnxruntime.SessionOptions对象
+        :param executor: 线程池
+        """
         super().__init__(model_name, model_path, model_local_dir, providers, session_options, executor)
 
     def _preprocess_sync(self, image: numpy.ndarray) -> numpy.ndarray:

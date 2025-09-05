@@ -25,11 +25,12 @@ class DocumentOrientationDetector(PredictBase):
             executor: ThreadPoolExecutor | None = None
     ):
         """
-        图像方向检测器
-        :param model_path: ONNX模型路径
-        :param providers: ONNX Runtime providers，默认自动选择
-        :param session_options: ONNX会话选项
-        :param executor: 进程池
+        :param model_name: 模型名称
+        :param model_path: 模型路径
+        :param model_local_dir: 模型下载到本地路径
+        :param providers: onnx providers，默认由于PaddleONNOCRXUtils.get_available_providers选择
+        :param session_options: onnxruntime.SessionOptions对象
+        :param executor: 线程池
         """
         super().__init__(model_name, model_path, model_local_dir, providers, session_options, executor)
 

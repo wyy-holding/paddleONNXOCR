@@ -9,6 +9,7 @@ import base64
 
 
 class ImageLoader:
+    """图像下载类"""
     @staticmethod
     async def load_image(
             image_path: Union[str, numpy.ndarray, Image.Image]

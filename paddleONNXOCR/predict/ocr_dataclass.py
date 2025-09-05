@@ -13,10 +13,20 @@ class OCRChunkResult:
     angle: str = "0_degree"
     angle_confidence: float = 1.0
 
-    async def to_json(self, ensure_ascii=False, indent=4):
+    async def to_json(
+            self,
+            ensure_ascii=False,
+            indent=4
+    ):
+        """
+        OCR结果块转json
+        """
         return json.dumps(asdict(self), ensure_ascii=ensure_ascii, indent=indent)
 
     async def to_dict(self):
+        """
+        OCR结果块转dict
+        """
         return asdict(self)
 
 
