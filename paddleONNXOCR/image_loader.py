@@ -10,13 +10,16 @@ import base64
 
 class ImageLoader:
     """图像下载类"""
+    headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+    }
     @staticmethod
     async def load_image(
             image_path: Union[str, numpy.ndarray, Image.Image]
     ) -> numpy.ndarray:
         match image_path:
             case str() if validators.url(image_path):
-                async with aiohttp.ClientSession() as session:
+                async with aiohttp.ClientSession(headers=ImageLoader.headers) as session:
                     async with session.get(image_path) as response:
                         response.raise_for_status()
                         content_type = response.headers.get('Content-Type', '').lower()
