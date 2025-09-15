@@ -7,7 +7,7 @@ from paddleONNXOCR.predict.predict_doc_cls import DocumentOrientationDetector
 from paddleONNXOCR.predict.predict_uvdoc import DocumentRectifier
 
 __author__ = 'wyy-holding'
-__version__ = '0.0.4'
+__version__ = '0.0.5'
 __all__ = [
     "PredictSystem",
     "TextLineOrientationDetector",
