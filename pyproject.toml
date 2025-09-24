@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "paddle_onnxocr"
-version = "0.0.5"
+version = "0.0.6"
 authors = [
     { name = "wyy-holding", email = "944581678@qq.com" },
 ]
