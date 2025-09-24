@@ -32,6 +32,35 @@ class TextLineOrientationDetector(PredictBase):
         """
         super().__init__(model_name, model_path, model_local_dir, providers, session_options, executor)
 
+    async def _softmax(self, x: numpy.ndarray) -> numpy.ndarray:
+        """手动实现softmax函数，确保数值稳定性"""
+        exp_x = numpy.exp(x - numpy.max(x))
+        return exp_x / numpy.sum(exp_x)
+
+    async def _smart_postprocess(self, logits: numpy.ndarray) -> numpy.ndarray:
+        """
+        智能后处理 - 自动判断是否需要softmax
+
+        Args:
+            logits: 模型输出
+
+        Returns:
+            probs: 处理后的概率数组
+        """
+        # 如果有batch维度，取第一个样本
+        if len(logits.shape) > 1:
+            logits = logits[0]
+
+        # 检查是否已经是概率值（和接近1且都为正数）
+        if numpy.all(logits >= 0) and numpy.abs(numpy.sum(logits) - 1.0) < 0.1:
+            # 已经是概率，直接使用
+            probs = logits
+        else:
+            # 原始logits，使用softmax
+            probs = await self._softmax(logits)
+
+        return probs
+
     def _preprocess_sync(
             self,
             image: numpy.ndarray
@@ -68,6 +97,7 @@ class TextLineOrientationDetector(PredictBase):
         try:
             loop = asyncio.get_event_loop()
             probs = await loop.run_in_executor(self.executor, self.run_inference, blob)
+            probs = await self._smart_postprocess(probs)
             pred_id = int(numpy.argmax(probs))
             confidence = float(numpy.max(probs))
             return {
