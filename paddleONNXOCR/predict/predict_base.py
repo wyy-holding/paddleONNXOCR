@@ -39,8 +39,7 @@ class PredictBase:
         self.executor: ThreadPoolExecutor = ThreadPoolExecutor(
             max_workers=psutil.cpu_count()) if executor is None else executor
         self.session = None
-        self.input_name = None
-        self.output_name = None
+        self.input_names = None
         self.output_names = None
         self.input_shape = None
         self.aiohttp_session = None
@@ -85,7 +84,7 @@ class PredictBase:
         :param blob: numpy.ndarray 图片对象
         :return: onnx推理后结果
         """
-        return self.session.run([self.output_name], {self.input_name: blob})[0]
+        return self.session.run(self.output_names, {self.input_names[0]: blob})[0]
 
     async def _run_inference(self, *args, **kwargs) -> Any:
         ...
@@ -163,9 +162,9 @@ class PredictBase:
                                                                      self.session_options)
         except Exception as e:
             raise e
-        input_name, output_name, input_shape = await PaddleONNOCRXUtils.get_onnx_session_params(self.session)
-        self.input_name = input_name
-        self.output_name = output_name
+        input_names, output_names, input_shape = await PaddleONNOCRXUtils.get_onnx_session_params(self.session)
+        self.input_names = input_names
+        self.output_names = output_names
         self.input_shape = input_shape
         self.aiohttp_session = await PaddleONNOCRXUtils.get_aiohttp_session()
         if self.callable_func is not None:
