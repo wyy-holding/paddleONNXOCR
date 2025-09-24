@@ -25,3 +25,8 @@ class TableModels(Enum):
 class ImageModels(Enum):
     L_CNet_x1_0 = "PP-LCNet_x1_0_doc_ori.onnx"
     UVDOC = "UVDoc.onnx"
+    DOC_LAYOUT_S = "wyyHolding/PP-DocLayout-S.onnx"
+    DOC_LAYOUT_M = "wyyHolding/PP-DocLayout-M.onnx"
+    DOC_LAYOUT_L = "wyyHolding/PP-DocLayout-L.onnx"
+    DOC_LAYOUT_PLUS_L = "wyyHolding/PP-DocLayout-plus-L.onnx"
+    DOC_BLOCK_LAYOUT = "wyyHolding/PP-DocBlockLayout.onnx"
