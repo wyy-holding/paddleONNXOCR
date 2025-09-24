@@ -65,13 +65,13 @@ class PaddleONNOCRXUtils:
     @staticmethod
     async def get_onnx_session_params(
             session: onnxruntime.InferenceSession | None = None
-    ) -> Tuple[str, str, list]:
+    ) -> Tuple[list, list, list]:
         """
         获取onnx会话参数
         :param session: onnx会话
-        :return: input_name, output_name, input_shape
+        :return: input_names, output_names, input_shape
         """
-        return session.get_inputs()[0].name, session.get_outputs()[0].name, session.get_inputs()[0].shape
+        return [inp.name for inp in session.get_inputs()], [output.name for output in session.get_outputs()], session.get_inputs()[0].shape
 
     @staticmethod
     async def get_aiohttp_session() -> aiohttp.ClientSession:
