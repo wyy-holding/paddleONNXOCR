@@ -5,6 +5,8 @@ from paddleONNXOCR.predict.predict_det import TextDetector
 from paddleONNXOCR.predict.predict_rec import OCRRecognizer
 from paddleONNXOCR.predict.predict_doc_cls import DocumentOrientationDetector
 from paddleONNXOCR.predict.predict_uvdoc import DocumentRectifier
+from paddleONNXOCR.predict.predict_layout import LayoutDetection
+from paddleONNXOCR.predict.predict_table_cell import TableCellDetector
 
 __author__ = 'wyy-holding'
 __version__ = '0.0.5'
@@ -19,5 +21,7 @@ __all__ = [
     "DetModels",
     "RecModels",
     "TableModels",
-    "ImageModels"
+    "ImageModels",
+    "LayoutDetection",
+    "TableCellDetector"
 ]
