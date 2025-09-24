@@ -415,14 +415,23 @@ class PredictSystem:
             ocr_result: OCRResult
     ) -> numpy.ndarray:
         """
-        画出对比图
-        @:param ocr_result:ocr识别结果
-        :return: 对比图，左边原图，右边识别结果
+        画出对比图：左边原图+检测框，右边识别结果文字
+        @:param ocr_result: ocr识别结果
+        :return: 对比图，左边原图（带检测框），右边识别结果
         """
         if ocr_result.image is None or ocr_result.results is None:
             raise ValueError("没有可用的OCR结果。请先调用 predict 方法。")
         font_path = self._font_path
         height, width = ocr_result.image.shape[:2]
+
+        # 左边图像：复制原图并绘制检测框
+        left_img = ocr_result.image.copy()
+        for result in ocr_result.results:
+            box = numpy.array(result.box, dtype=numpy.int32)
+            # 绘制多边形框（使用红色）
+            cv2.polylines(left_img, [box], isClosed=True, color=(0, 0, 255), thickness=2)
+
+        # 右边图像：绘制识别结果文字
         white_img = numpy.ones((height, width, 3), dtype=numpy.uint8) * 255
         white_img_pil = Image.fromarray(cv2.cvtColor(white_img, cv2.COLOR_BGR2RGB))
         draw = ImageDraw.Draw(white_img_pil)
@@ -494,7 +503,8 @@ class PredictSystem:
                 draw.text((text_x, text_y), text, font=font, fill=(255, 0, 0))
 
         white_img = cv2.cvtColor(numpy.array(white_img_pil), cv2.COLOR_RGB2BGR)
-        vis_img = numpy.hstack([ocr_result.image, white_img])
+        # 拼接左右两张图像
+        vis_img = numpy.hstack([left_img, white_img])
         return vis_img
 
     async def get_text(
