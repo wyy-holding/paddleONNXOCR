@@ -28,5 +28,5 @@ class ImageModels(Enum):
     DOC_LAYOUT_S = "PP-DocLayout-S.onnx"
     DOC_LAYOUT_M = "PP-DocLayout-M.onnx"
     DOC_LAYOUT_L = "PP-DocLayout-L.onnx"
-    DOC_LAYOUT_PLUS_L = "PP-DocLayout-plus-L.onnx"
+    DOC_LAYOUT_PLUS_L = "PP-DocLayout_plus-L.onnx"
     DOC_BLOCK_LAYOUT = "PP-DocBlockLayout.onnx"
