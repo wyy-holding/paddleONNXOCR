@@ -74,7 +74,7 @@ class TableClassifier(PredictBase):
         """
         运行模型推理（模型已包含 softmax）
         """
-        probs = self.session.run([self.output_name], {self.input_name: blob})[0][0]  # 直接就是概率分布
+        probs = self.session.run(self.output_names, {self.input_names[0]: blob})[0][0]  # 直接就是概率分布
         pred_id = int(numpy.argmax(probs))
         pred_prob = float(probs[pred_id])
 
