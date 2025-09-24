@@ -176,7 +176,7 @@ class OCRRecognizer(PredictBase):
 
     def _run_inference_sync(self, blob: numpy.ndarray) -> numpy.ndarray:
         """同步推理函数，返回主输出 [N, T, C]"""
-        outputs = self.session.run(None, {self.input_name: blob})
+        outputs = self.session.run(None, {self.input_names[0]: blob})
         for out in outputs:
             if out.ndim == 3:
                 return out
