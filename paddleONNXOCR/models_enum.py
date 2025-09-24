@@ -18,6 +18,8 @@ class RecModels(Enum):
 
 class TableModels(Enum):
     L_CNet_x1_0 = "PP-LCNet_x1_0_table_cls.onnx"
+    WIRED_TABLE = "RT-DETR-L_wired_table_cell_det.onnx"
+    WIRELESS_TABLE = "RT-DETR-L_wireless_table_cell_det.onnx"
 
 
 class ImageModels(Enum):
