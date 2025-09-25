@@ -7,6 +7,7 @@ from paddleONNXOCR.predict.predict_doc_cls import DocumentOrientationDetector
 from paddleONNXOCR.predict.predict_uvdoc import DocumentRectifier
 from paddleONNXOCR.predict.predict_layout import LayoutDetection
 from paddleONNXOCR.predict.predict_table_cell import TableCellDetector
+from paddleONNXOCR.predict.predict_table_cls import TableClassifier
 
 __author__ = 'wyy-holding'
 __version__ = '0.0.6'
@@ -23,5 +24,6 @@ __all__ = [
     "TableModels",
     "ImageModels",
     "LayoutDetection",
-    "TableCellDetector"
+    "TableCellDetector",
+    "TableClassifier"
 ]
