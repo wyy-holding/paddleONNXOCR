@@ -11,6 +11,7 @@ from deskew import determine_skew
 from modelscope import snapshot_download
 
 from paddleONNXOCR.models_enum import *
+from paddleONNXOCR.predict.ocr_dataclass import OCRResult
 
 
 class PaddleONNOCRXUtils:
@@ -486,3 +487,297 @@ class UtilsCommon:
             local_dir=local_dir,
             allow_patterns=["*.onnx"]
         )
+
+
+
+class TableHTMLGenerator:
+    """
+    将表格单元格检测、文本检测和文本识别结果合并生成HTML表格的工具类。
+    """
+
+    def __init__(
+            self,
+            cell_detection_results: Dict,
+            ocr_result: OCRResult,
+            iou_threshold: float = 0.7,
+            alignment_threshold: float = 0.5,
+            coordinate_tolerance: int = 8
+    ):
+        """
+        初始化参数
+
+        Args:
+            cell_detection_results: 表格单元格检测结果
+            ocr_result: 文本检测结果,
+            iou_threshold (float): 匹配文本框与单元格时的IoU阈值
+            alignment_threshold (float): 判断文本对齐方式的偏移比例阈值
+            coordinate_tolerance (int): 坐标聚类时的容差
+        """
+        self.cell_boxes = []
+        self.ocr_boxes = []
+        self.ocr_results = []
+        self.cell_detection_results = cell_detection_results
+        self.ocr_result = ocr_result
+        self.iou_threshold = iou_threshold
+        self.alignment_threshold = alignment_threshold
+        self.coordinate_tolerance = coordinate_tolerance
+        self.init_params()
+
+    def init_params(self):
+        self.cell_boxes = [box['coordinate'][:4] for box in self.cell_detection_results['boxes']]
+        for item in self.ocr_result.results:
+            self.ocr_boxes.append(item.box)
+            self.ocr_results.append(item.text)
+
+    @staticmethod
+    def convert_four_points_to_bbox(four_points: List[List[int]]) -> List[float]:
+        """将四个点的格式转换为bbox格式 [x1, y1, x2, y2]"""
+        x_coords = [point[0] for point in four_points]
+        y_coords = [point[1] for point in four_points]
+        return [min(x_coords), min(y_coords), max(x_coords), max(y_coords)]
+
+    def compute_intersection_over_text(self, cell_box: List[float], text_box: List[float]) -> float:
+        """计算文本框与单元格的交集占文本框面积的比例（IoT）"""
+        x1_1, y1_1, x2_1, y2_1 = map(float, cell_box)
+        x1_2, y1_2, x2_2, y2_2 = map(float, text_box)
+
+        x_left = max(x1_1, x1_2)
+        y_top = max(y1_1, y1_2)
+        x_right = min(x2_1, x2_2)
+        y_bottom = min(y2_1, y2_2)
+
+        inter_width = max(0, x_right - x_left)
+        inter_height = max(0, y_bottom - y_top)
+        inter_area = inter_width * inter_height
+
+        text_area = (x2_2 - x1_2) * (y2_2 - y1_2)
+        return inter_area / text_area if text_area > 0 else 0
+
+    def calculate_text_alignment(self, cell_box: List[float], text_box: List[float]) -> str:
+        """根据文本框在单元格中的位置判断对齐方式"""
+        cell_x1, cell_y1, cell_x2, cell_y2 = cell_box
+        text_x1, text_y1, text_x2, text_y2 = text_box
+
+        cell_center = (cell_x1 + cell_x2) / 2
+        text_center = (text_x1 + text_x2) / 2
+        cell_width = cell_x2 - cell_x1
+
+        offset_ratio = (text_center - cell_center) / (cell_width / 2) if cell_width > 0 else 0
+
+        if offset_ratio < -self.alignment_threshold:
+            return "left"
+        elif offset_ratio > self.alignment_threshold:
+            return "right"
+        else:
+            return "center"
+
+    def sort_table_cells_boxes(self, boxes: List[List[float]]) -> Tuple[List[List[float]], List[int]]:
+        """对单元格按行优先排序"""
+        boxes_sorted_by_y = sorted(boxes, key=lambda box: box[1])
+        rows = []
+        current_row = []
+        current_y = None
+        tolerance = 10  # 行对齐容差
+
+        for box in boxes_sorted_by_y:
+            y1 = box[1]
+            if current_y is None or abs(y1 - current_y) <= tolerance:
+                current_row.append(box)
+            else:
+                current_row.sort(key=lambda x: x[0])  # 按x排序
+                rows.append(current_row)
+                current_row = [box]
+                current_y = y1
+
+        if current_row:
+            current_row.sort(key=lambda x: x[0])
+            rows.append(current_row)
+
+        sorted_boxes = []
+        flag = [0]
+        for row in rows:
+            sorted_boxes.extend(row)
+            flag.append(flag[-1] + len(row))
+
+        return sorted_boxes, flag
+
+    def match_text_to_cells(self, cell_boxes: List[List[float]], text_boxes: List[List[float]]) -> Dict[int, List[int]]:
+        """匹配每个文本框到对应的单元格"""
+        matched = {}
+        for i, cell_box in enumerate(cell_boxes):
+            for j, text_box in enumerate(text_boxes):
+                if self.compute_intersection_over_text(cell_box, text_box) > self.iou_threshold:
+                    matched.setdefault(i, []).append(j)
+        return matched
+
+    def generate_table_structure_from_cells(self, cell_boxes: List[List[float]]) -> Tuple:
+        """从单元格坐标生成表格结构：行列数、rowspan/colspan、cell_map"""
+        x_coords = [x for cell in cell_boxes for x in (cell[0], cell[2])]
+        y_coords = [y for cell in cell_boxes for y in (cell[1], cell[3])]
+
+        def cluster_positions(positions, tol):
+            if not positions:
+                return []
+            positions = sorted(set(positions))
+            clusters = []
+            current_cluster = [positions[0]]
+            for pos in positions[1:]:
+                if abs(pos - current_cluster[-1]) <= tol:
+                    current_cluster.append(pos)
+                else:
+                    clusters.append(sum(current_cluster) / len(current_cluster))
+                    current_cluster = [pos]
+            clusters.append(sum(current_cluster) / len(current_cluster))
+            return clusters
+
+        x_positions = cluster_positions(x_coords, self.coordinate_tolerance)
+        y_positions = cluster_positions(y_coords, self.coordinate_tolerance)
+
+        num_rows = len(y_positions) - 1
+        num_cols = len(x_positions) - 1
+
+        cells_info = []
+        cell_map = {}  # (r, c) -> cell_index
+
+        for idx, cell in enumerate(cell_boxes):
+            x1, y1, x2, y2 = cell
+            x1_idx = min(range(len(x_positions)), key=lambda i: abs(x_positions[i] - x1))
+            x2_idx = min(range(len(x_positions)), key=lambda i: abs(x_positions[i] - x2))
+            y1_idx = min(range(len(y_positions)), key=lambda i: abs(y_positions[i] - y1))
+            y2_idx = min(range(len(y_positions)), key=lambda i: abs(y_positions[i] - y2))
+
+            col_start = min(x1_idx, x2_idx)
+            col_end = max(x1_idx, x2_idx)
+            row_start = min(y1_idx, y2_idx)
+            row_end = max(y1_idx, y2_idx)
+
+            rowspan = max(1, row_end - row_start)
+            colspan = max(1, col_end - col_start)
+
+            cells_info.append({
+                "row_start": row_start,
+                "col_start": col_start,
+                "rowspan": rowspan,
+                "colspan": colspan,
+                "index": idx
+            })
+
+            for r in range(row_start, row_start + rowspan):
+                for c in range(col_start, col_start + colspan):
+                    cell_map[(r, c)] = idx
+
+        return cells_info, num_rows, num_cols, cell_map
+
+    def generate_html(
+            self,
+    ) -> str:
+        """
+        主接口：生成完整的HTML表格字符串
+        Returns:
+            完整的HTML文档字符串
+        """
+        if not self.cell_boxes:
+            empty_table = "<table></table>"
+            return self._wrap_html_document(empty_table)
+
+        # 转换文本框为bbox格式
+        converted_text_boxes = [
+            self.convert_four_points_to_bbox(four_points)
+            for four_points in self.ocr_boxes
+        ]
+
+        # 排序单元格
+        sorted_cells, _ = self.sort_table_cells_boxes(self.cell_boxes)
+
+        # 匹配文本到单元格
+        text_cell_mapping = self.match_text_to_cells(sorted_cells, converted_text_boxes)
+
+        # 生成表格结构
+        cells_info, num_rows, num_cols, cell_map = self.generate_table_structure_from_cells(sorted_cells)
+
+        # 构建HTML表格
+        table_html = "<table>"
+        for r in range(num_rows):
+            table_html += "<tr>"
+            c = 0
+            while c < num_cols:
+                key = (r, c)
+                if key in cell_map:
+                    cell_index = cell_map[key]
+                    cell_info = cells_info[cell_index]
+
+                    # 只在左上角位置生成<td>
+                    if cell_info["row_start"] == r and cell_info["col_start"] == c:
+                        rowspan = cell_info["rowspan"]
+                        colspan = cell_info["colspan"]
+
+                        # 获取文本内容和对齐方式
+                        # 获取文本内容和对齐方式
+                        cell_content = ""
+                        text_align = "center"
+                        if cell_index in text_cell_mapping:
+                            # 先把文本框索引按阅读顺序排好
+                            text_indices = text_cell_mapping[cell_index]
+                            # 用左上角 y、x 作排序键（行优先）
+                            text_indices.sort(
+                                key=lambda idx: (
+                                    converted_text_boxes[idx][1],  # y1
+                                    converted_text_boxes[idx][0]  # x1
+                                )
+                            )
+
+                            texts = []
+                            for text_idx in text_indices:
+                                if text_idx < len(self.ocr_results):
+                                    texts.append(self.ocr_results[text_idx])
+                                    if len(texts) == 1:  # 取第一个文本框算对齐
+                                        text_box = converted_text_boxes[text_idx]
+                                        text_align = self.calculate_text_alignment(
+                                            sorted_cells[cell_index], text_box
+                                        )
+                            cell_content = " ".join(texts)
+
+                        # 构造属性
+                        attrs = []
+                        if rowspan > 1:
+                            attrs.append(f'rowspan="{rowspan}"')
+                        if colspan > 1:
+                            attrs.append(f'colspan="{colspan}"')
+                        attrs.append(f'style="text-align: {text_align};"')
+
+                        attr_str = " " + " ".join(attrs) if attrs else ""
+                        table_html += f"<td{attr_str}>{cell_content}</td>"
+
+                    c += cell_info["colspan"]
+                else:
+                    # table_html += "<td></td>"
+                    c += 1
+            table_html += "</tr>"
+        table_html += "</table>"
+
+        return self._wrap_html_document(table_html)
+
+    @staticmethod
+    def _wrap_html_document(content: str) -> str:
+        """包装成完整的HTML文档"""
+        return f"""<!DOCTYPE html>
+                <html lang="zh">
+                <head>
+                    <meta charset="UTF-8">
+                    <title>表格识别结果</title>
+                    <style>
+                        table {{
+                            border-collapse: collapse;
+                            width: 100%;
+                        }}
+                        th, td {{
+                            border: 1px solid #999;
+                            padding: 8px;
+                            text-align: center;
+                        }}
+                    </style>
+                </head>
+                <body>
+                {content}
+                </body>
+                </html>"""
