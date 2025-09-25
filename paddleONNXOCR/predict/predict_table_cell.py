@@ -17,7 +17,7 @@ class TableCellDetector(PredictBase):
             providers: list = None,
             session_options: onnxruntime.SessionOptions = None,
             executor: ThreadPoolExecutor | None = None,
-            threshold: float = 0.3,
+            threshold: float = 0.5,
             input_size: int = 640
     ):
         """
