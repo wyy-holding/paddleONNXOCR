@@ -1,16 +1,28 @@
+import asyncio
+import atexit
+import io
+import pdfplumber
 import aiohttp
+import fitz
 import numpy
 import cv2
 import base64
-import imghdr
 import math
 import onnxruntime
-from typing import Sequence, Any, Tuple, List, Dict
+import filetype
+import os
+import validators
+from pathlib import Path
+from urllib.parse import urlparse
+from typing import Sequence, Tuple, List, Callable, Awaitable, Optional, Dict, Any, Union
+from concurrent.futures import ThreadPoolExecutor
+from PIL import Image
 from deskew import determine_skew
 from modelscope import snapshot_download
 
+from paddleONNXOCR.file_download import file_downloader
 from paddleONNXOCR.models_enum import *
-from paddleONNXOCR.predict.ocr_dataclass import OCRResult
+from paddleONNXOCR.predict.ocr_dataclass import OCRResult, PdfPageResult
 
 
 class PaddleONNOCRXUtils:
@@ -39,6 +51,7 @@ class PaddleONNOCRXUtils:
         :return: onnx会话选项
         """
         session_options = onnxruntime.SessionOptions()
+        session_options.enable_cpu_mem_arena = False
         session_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
         session_options.intra_op_num_threads = 4
         return session_options
@@ -71,7 +84,8 @@ class PaddleONNOCRXUtils:
         :param session: onnx会话
         :return: input_names, output_names, input_shape
         """
-        return [inp.name for inp in session.get_inputs()], [output.name for output in session.get_outputs()], session.get_inputs()[0].shape
+        return [inp.name for inp in session.get_inputs()], [output.name for output in session.get_outputs()], \
+            session.get_inputs()[0].shape
 
     @staticmethod
     async def get_aiohttp_session() -> aiohttp.ClientSession:
@@ -458,23 +472,28 @@ class TextBoxSorter:
 
 class UtilsCommon:
     @staticmethod
-    def is_base64_image(
-            content: str
-    ) -> bool | bytes:
-        """
-        判断一个字符串是否是 Base64 编码的图片内容
-        """
+    async def is_base64_image(content: str) -> bool:
+        """判断是否为 Base64 图片，若是则返回 True，否则返回 False。"""
+        if content.startswith("data:image/"):
+            content = content.split(",", 1)[1]
         try:
-            decoded_data = base64.b64decode(content, validate=True)
+            decoded = base64.b64decode(content, validate=True)
+            Image.open(io.BytesIO(decoded)).convert("RGB")
+            return True
         except Exception:
             return False
+
+    @staticmethod
+    async def base64_to_numpy_rgb(content: str) -> Union[numpy.ndarray, None]:
+        """将 Base64 图像字符串转换为 RGB 格式的 numpy 数组；若失败则返回 None。"""
+        if content.startswith("data:image/"):
+            content = content.split(",", 1)[1]
         try:
-            image_type = imghdr.what(None, h=decoded_data)
-            if image_type is not None:
-                return decoded_data
+            decoded = base64.b64decode(content, validate=True)
+            image = Image.open(io.BytesIO(decoded)).convert("RGB")
+            return numpy.array(image)
         except Exception:
-            ...
-        return False
+            return None
 
     @staticmethod
     async def download_model(
@@ -486,7 +505,6 @@ class UtilsCommon:
             local_dir=local_dir,
             allow_patterns=["*.onnx"]
         )
-
 
 
 class TableHTMLGenerator:
@@ -780,3 +798,325 @@ class TableHTMLGenerator:
                 {content}
                 </body>
                 </html>"""
+
+
+# MIME 类型映射表：用于扩展名 fallback
+TEXT_MIME_MAP = {
+    'txt': 'text/plain',
+    'csv': 'text/csv',
+    'log': 'text/plain',
+    'json': 'application/json',
+    'xml': 'application/xml',
+    'html': 'text/html',
+    'htm': 'text/html',
+    'md': 'text/markdown',
+    'yaml': 'application/yaml',
+    'yml': 'application/yaml',
+}
+
+
+class FileTypeDetector:
+    """
+    异步通用文件类型检测器，支持本地文件路径和在线 URL。
+
+    优先使用 `filetype` 基于魔数（magic bytes）检测真实 MIME 类型；
+    若失败，则尝试通过扩展名进行 fallback（仅限 TEXT_MIME_MAP 中的类型）。
+    """
+
+    # 下载 URL 时读取的字节数（filetype 推荐至少 262 字节，4KB 足够）
+    URL_CHUNK_SIZE: int = 4096
+
+    @classmethod
+    async def detect(cls, source: Union[str, Path], session: Optional[aiohttp.ClientSession] = None) -> Optional[
+        filetype.Type]:
+        """
+        异步检测文件类型。
+
+        :param source: 本地文件路径（str 或 Path）或在线 URL（str）
+        :param session: 可选的 aiohttp.ClientSession（用于连接复用，提升并发性能）
+        :return: filetype.Type 对象（若可识别），否则 None
+        :raises: ValueError, aiohttp.ClientError, OSError, FileNotFoundError 等
+        """
+        if isinstance(source, str) and validators.url(source):
+            return await cls._detect_from_url(source, session)
+        else:
+            return await cls._detect_from_file(source)
+
+    @classmethod
+    async def _detect_from_file(cls, file_path: Union[str, Path]) -> Optional[filetype.Type]:
+        """从本地文件检测类型"""
+        path = Path(file_path)
+        if not path.is_file():
+            raise FileNotFoundError(f"File not found or is not a regular file: {path}")
+        return filetype.guess(str(path))
+
+    @classmethod
+    async def _detect_from_url(cls, url: str, session: Optional[aiohttp.ClientSession] = None) -> Optional[
+        filetype.Type]:
+        """从 URL 异步下载部分内容并检测类型"""
+        close_session = False
+        if session is None:
+            session = aiohttp.ClientSession()
+            close_session = True
+        try:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                resp.raise_for_status()
+                chunk = await resp.content.read(cls.URL_CHUNK_SIZE)
+            if not chunk:
+                raise ValueError("Received empty content from URL")
+            return filetype.guess(chunk)
+        finally:
+            if close_session:
+                await session.close()
+
+    @classmethod
+    async def get_info(cls, source: Union[str, Path], session: Optional[aiohttp.ClientSession] = None) -> Optional[
+        Dict[str, Any]]:
+        """
+        获取文件类型信息，包含 MIME、扩展名及常见类别标志。
+
+        :return: 包含以下字段的字典（若可识别）：
+            - mime: str
+            - extension: str
+        若完全无法识别，返回 None。
+        """
+        kind = await cls.detect(source, session)
+        if kind is not None:
+            return {
+                "mime": kind.mime,
+                "extension": kind.extension
+            }
+        # Fallback: 尝试从扩展名推断（仅限已知文本类型）
+        ext = await cls._extract_extension(source)
+        if ext and ext in TEXT_MIME_MAP:
+            mime = TEXT_MIME_MAP[ext]
+            return {
+                "mime": mime,
+                "extension": ext
+            }
+        return None  # 完全无法识别
+
+    @staticmethod
+    async def _extract_extension(source: Union[str, Path]) -> Optional[str]:
+        """安全地从路径或 URL 提取小写扩展名（不含点）"""
+        try:
+            if isinstance(source, str) and validators.url(source):
+                parsed = urlparse(source)
+                path = parsed.path
+            else:
+                path = str(source)
+            ext = os.path.splitext(path)[1].lower().lstrip('.')
+            return ext if ext else None
+        except Exception:
+            return None
+
+
+class PDFExtractor:
+    def __init__(
+            self,
+            ocr_func: Optional[Callable[[numpy.ndarray], Awaitable[OCRResult]]] = None,
+            max_workers: Optional[int] = None,
+            table_format: str = "text"
+    ):
+        """
+        初始化 PDFExtractor。
+        :param ocr_func: 异步 OCR 函数，接收 numpy.ndarray (HWC, RGB)，返回 Awaitable[OCRResult]。
+                         若为 None，则图像区域返回空 OCRResult。
+        :param max_workers: 并行线程数，默认为 CPU 核心数
+        :param table_format: 表格输出格式，"text"（默认）表示转为字符串（tab分隔），"list" 表示保留原始列表并用 str() 转为字符串
+        """
+        if table_format not in ("text", "list"):
+            raise ValueError("table_format must be 'text' or 'list'")
+        self.ocr_func = ocr_func
+        self.max_workers = max_workers or os.cpu_count()
+        self.table_format = table_format
+        self.executor = ThreadPoolExecutor(max_workers=self.max_workers)
+        atexit.register(self._shutdown_executor)
+
+    def _shutdown_executor(self):
+        if self.executor:
+            self.executor.shutdown(wait=True)
+
+    def _bytes_to_ndarray(self, img_bytes: bytes) -> Optional[numpy.ndarray]:
+        try:
+            nparr = numpy.frombuffer(img_bytes, numpy.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if img is None:
+                return None
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            return img_rgb
+        except Exception:
+            try:
+                img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+                return numpy.array(img)
+            except Exception:
+                return None
+
+    def _process_single_page(self, pdf_path: str, page_num: int) -> Dict[str, Any]:
+        """同步处理单页（仅提取原始数据，不执行 OCR）"""
+        doc = fitz.open(pdf_path)
+        try:
+            with pdfplumber.open(pdf_path) as pdf:
+                page = doc.load_page(page_num)
+                plumber_page = pdf.pages[page_num]
+                page_elements = []
+
+                # --- 1. 提取表格 ---
+                tables = plumber_page.find_tables()
+                for table in tables:
+                    bbox = table.bbox
+                    table_data = table.extract()
+                    page_elements.append({
+                        "type": "table",
+                        "bbox": bbox,
+                        "data": table_data,
+                        "position": bbox[1]
+                    })
+                # --- 2. 提取图像（仅保存图像数组，不 OCR）---
+                image_info = page.get_images(full=True)
+                for img in image_info:
+                    xref = img[0]
+                    try:
+                        bbox = page.get_image_bbox(img)
+                        if bbox.is_empty:
+                            continue
+                        x0, y0, x1, y1 = bbox
+                    except Exception:
+                        x0, y0, x1, y1 = 0, 0, 0, 0
+                    base_image = doc.extract_image(xref)
+                    img_bytes = base_image["image"]
+                    img_array = self._bytes_to_ndarray(img_bytes)
+                    page_elements.append({
+                        "type": "image",
+                        "bbox": (x0, y0, x1, y1),
+                        "data": img_array,
+                        "position": y0
+                    })
+                # --- 3. 提取文本块（排除表格区域）---
+                blocks = page.get_text("dict")["blocks"]
+                for block in blocks:
+                    if "lines" not in block:
+                        continue
+                    lines = block["lines"]
+                    if not lines:
+                        continue
+                    text_lines = []
+                    all_span_rects = []
+                    for line in lines:
+                        for span in line["spans"]:
+                            text_lines.append(span["text"])
+                            all_span_rects.append(fitz.Rect(span["bbox"]))
+                    block_rect = fitz.Rect(all_span_rects[0])
+                    for r in all_span_rects[1:]:
+                        block_rect |= r
+                    x0, y0, x1, y1 = block_rect
+                    # 跳过与表格重叠的文本
+                    skip = False
+                    for tab in tables:
+                        tab_rect = fitz.Rect(tab.bbox)
+                        if abs(block_rect & tab_rect) > 5:
+                            skip = True
+                            break
+                    if skip:
+                        continue
+                    text = " ".join(text_lines).strip()
+                    if not text:
+                        continue
+                    page_elements.append({
+                        "type": "text",
+                        "bbox": (x0, y0, x1, y1),
+                        "data": text,
+                        "position": y0
+                    })
+                page_elements.sort(key=lambda e: e["position"])
+                return {
+                    "page": page_num + 1,
+                    "elements": page_elements
+                }
+        finally:
+            doc.close()
+
+    async def extract_all_from_pdf(self, pdf_path: str) -> List[Dict[str, Any] | None]:
+        """异步并行提取所有页面原始元素（不含 OCR）"""
+        doc = fitz.open(pdf_path)
+        total_pages = len(doc)
+        doc.close()
+        loop = asyncio.get_running_loop()
+        tasks = [
+            loop.run_in_executor(self.executor, self._process_single_page, pdf_path, i)
+            for i in range(total_pages)
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        full_content = [None] * total_pages
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                print(f"Error processing page {i + 1}: {result}")
+                full_content[i] = {"page": i + 1, "elements": []}
+            else:
+                full_content[i] = result
+        return full_content
+
+    async def get_page_text(self, page_elements: List[Dict]) -> List[OCRResult]:
+        """
+        将一页的元素转换为 OCRResult 列表。
+        - text/table: 立即构造 OCRResult
+        - image: 调用 self.ocr_func（返回 OCRResult）
+        """
+
+        async def _process_element(elem: Dict) -> OCRResult:
+            elem_type = elem["type"]
+            if elem_type == "text":
+                return OCRResult(text=elem["data"])
+            elif elem_type == "table":
+                table_data = elem["data"]
+                if self.table_format == "text":
+                    table_str = "\n".join(
+                        "\t".join(str(cell) if cell is not None else "" for cell in row)
+                        for row in table_data
+                    )
+                else:
+                    table_str = str(table_data)
+                return OCRResult(text=table_str)
+            elif elem_type == "image":
+                img_array = elem["data"]
+                if self.ocr_func is not None and img_array is not None:
+                    try:
+                        ocr_result: OCRResult = await self.ocr_func(img_array)
+                        return ocr_result
+                    except Exception:
+                        return OCRResult(text="")
+                else:
+                    return OCRResult(text="")
+            else:
+                return OCRResult(text="")
+
+        tasks = [_process_element(elem) for elem in page_elements]
+        ocr_results = await asyncio.gather(*tasks, return_exceptions=True)
+        final_results: List[OCRResult] = []
+        for i, res in enumerate(ocr_results):
+            if isinstance(res, Exception):
+                print(f"Exception in element {i}: {res}")
+                final_results.append(OCRResult(text=""))
+            else:
+                final_results.append(res)
+        return final_results
+
+    async def get_full_text(self, pdf_path: str) -> List[PdfPageResult]:
+        """提取整个 PDF，返回每页的 PdfPageResult 列表"""
+        if validators.url(pdf_path):
+            pdf_path = await file_downloader.download(pdf_path)
+        content = await self.extract_all_from_pdf(pdf_path)
+        full_results: List[PdfPageResult] = []
+        for page in content:
+            page_index = page["page"]
+            ocr_data = await self.get_page_text(page["elements"])
+            page_text = "\n".join(ocr.text for ocr in ocr_data)
+            full_results.append(
+                PdfPageResult(
+                    page_index=page_index,
+                    text=page_text,
+                    ocr_data=ocr_data
+                )
+            )
+        os.remove(pdf_path)
+        return full_results
