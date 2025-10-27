@@ -50,7 +50,7 @@ async def main():
     :return:
     """
     async with PredictSystem() as predictor_system:
-        ocr_result: AsyncGenerator[OCRResult, None] = predictor_system.predict_batch([
+        ocr_result: AsyncGenerator[OCRResult, None] = predictor_system.predict_batch_generator([
             "https://wx2.sinaimg.cn/mw690/005AKOR6ly1hvv14x3e1rj30j615hwfl.jpg",
             cv2.imread("test.png"),
             Image.open("test.png")
@@ -136,7 +136,8 @@ onnxruntime
 pillow
 validators
 aiohttp
-psutil
 deskew
 modelscope
+filetype
+pdfplumber
 ```
