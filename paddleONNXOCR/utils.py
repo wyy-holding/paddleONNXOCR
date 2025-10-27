@@ -22,7 +22,7 @@ from modelscope import snapshot_download
 
 from paddleONNXOCR.file_download import file_downloader
 from paddleONNXOCR.models_enum import *
-from paddleONNXOCR.predict.ocr_dataclass import OCRResult, PdfPageResult
+from paddleONNXOCR.predict.ocr_dataclass import OCRResult, PdfPageResult, PdfResult
 
 
 class PaddleONNOCRXUtils:
@@ -1101,19 +1101,20 @@ class PDFExtractor:
                 final_results.append(res)
         return final_results
 
-    async def get_full_text(self, pdf_path: str) -> List[PdfPageResult]:
+    async def get_full_text(self, pdf_path: str) -> PdfResult:
         """提取整个 PDF，返回每页的 PdfPageResult 列表"""
         delete_pdf = False
         if validators.url(pdf_path):
             pdf_path = await file_downloader.download(pdf_path)
             delete_pdf = True
         content = await self.extract_all_from_pdf(pdf_path)
-        full_results: List[PdfPageResult] = []
+        full_results: PdfResult = PdfResult(results=[])
         for page in content:
             page_index = page["page"]
             ocr_data = await self.get_page_text(page["elements"])
-            page_text = "\n".join(ocr.text for ocr in ocr_data)
-            full_results.append(
+            page_text = " ".join(ocr.text for ocr in ocr_data)
+            full_results.text += page_text
+            full_results.results.append(
                 PdfPageResult(
                     page_index=page_index,
                     text=page_text,

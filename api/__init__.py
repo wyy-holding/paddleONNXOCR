@@ -14,7 +14,7 @@ async def lifespan(app: FastAPI):
     ocr_predict_system = PredictSystem()
     await ocr_predict_system.__aenter__()
     yield
-    del ocr_predict_system
+    await ocr_predict_system.__aexit__(None, None, None)
 
 
 app = FastAPI(

@@ -18,7 +18,7 @@ from paddleONNXOCR.predict.predict_rec import OCRRecognizer
 from paddleONNXOCR.predict.predict_doc_cls import DocumentOrientationDetector
 from paddleONNXOCR.predict.predict_uvdoc import DocumentRectifier
 from paddleONNXOCR.utils import TextBoxSorter, PDFExtractor, FileTypeDetector, UtilsCommon
-from paddleONNXOCR.predict.ocr_dataclass import OCRChunkResult, OCRResult, PdfPageResult
+from paddleONNXOCR.predict.ocr_dataclass import OCRChunkResult, OCRResult, PdfPageResult, PdfResult
 
 
 class PredictSystem:
@@ -337,7 +337,7 @@ class PredictSystem:
     async def ocr(
             self,
             image: Union[str, numpy.ndarray, Image.Image]
-    ) -> OCRResult | List[PdfPageResult]:
+    ) -> OCRResult:
         numpy_image: numpy.ndarray = await ImageLoader.load_image(image)
         if self.use_doc_cls:
             numpy_image = await ImageRotate.doc_cls_rotate_image(numpy_image, self.doc_cls_model)
@@ -347,7 +347,7 @@ class PredictSystem:
             numpy_image = await self.uvdoc_model.predict(numpy_image)
         det_result = await self.det_model.predict(numpy_image)
         if det_result["num_boxes"] == 0:
-            return OCRResult(image=numpy_image)
+            return OCRResult()
         boxes = det_result["boxes"]
         scores = det_result["scores"]
         if self.sort_boxes:
@@ -382,15 +382,13 @@ class PredictSystem:
                 ocr_results.append(result)
         return OCRResult(
             await self.get_text(ocr_results),
-            await self.get_json(ocr_results),
-            ocr_results,
-            numpy_image.copy()
+            ocr_results
         )
 
     async def predict(
             self,
             image: Union[str, numpy.ndarray, Image.Image],
-    ) -> OCRResult | List[PdfPageResult]:
+    ) -> OCRResult | PdfResult:
         """
         对单张图像进行OCR
         :param image: 输入图像（路径、numpy数组或PIL图像）
@@ -406,7 +404,7 @@ class PredictSystem:
             self,
             images: List[Union[str, numpy.ndarray, Image.Image]],
             max_concurrent: int = os.cpu_count()
-    ) -> List[OCRResult]:
+    ) -> List[Union[OCRResult, PdfResult]]:
         """
         批量处理多张图像
         :param images: 图像列表
@@ -417,40 +415,12 @@ class PredictSystem:
 
         async def process_with_semaphore(image):
             async with semaphore:
-                try:
-                    ocr_result = await self.predict(image)
-                    return ocr_result
-                except Exception as e:
-                    raise Exception(e)
+                ocr_result = await self.predict(image)
+                return ocr_result
 
         tasks = [process_with_semaphore(img) for img in images]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         return results
-
-    async def predict_batch_generator(
-            self,
-            images: List[Union[str, numpy.ndarray, Image.Image]],
-            max_concurrent: int = os.cpu_count()
-    ) -> AsyncGenerator[OCRResult, None]:
-        """
-        批量处理多张图像
-        :param images: 图像列表
-        :param max_concurrent:  最大并发数
-        :return: 每张图像的OCR结果列表
-        """
-        semaphore = asyncio.Semaphore(max_concurrent)
-
-        async def process_with_semaphore(image):
-            async with semaphore:
-                try:
-                    ocr_result = await self.predict(image)
-                    return ocr_result
-                except Exception as e:
-                    raise Exception(e)
-
-        tasks = [process_with_semaphore(img) for img in images]
-        for coro in asyncio.as_completed(tasks):
-            yield await coro
 
     async def visualize_results(
             self,

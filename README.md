@@ -39,9 +39,7 @@ if __name__ == '__main__':
 ```python
 import cv2
 from PIL import Image
-from typing import AsyncGenerator
 from paddleONNXOCR import PredictSystem
-from paddleONNXOCR.predict.ocr_dataclass import OCRResult
 
 
 async def main():
@@ -50,15 +48,13 @@ async def main():
     :return:
     """
     async with PredictSystem() as predictor_system:
-        ocr_result: AsyncGenerator[OCRResult, None] = predictor_system.predict_batch_generator([
+        ocr_result =await predictor_system.predict_batch([
             "https://wx2.sinaimg.cn/mw690/005AKOR6ly1hvv14x3e1rj30j615hwfl.jpg",
             cv2.imread("test.png"),
             Image.open("test.png")
         ])
-        async for result in ocr_result:
-            if result is not None:
-                print(result.text)
-                print(result.json)
+        print(ocr_result)
+
 
 
 if __name__ == '__main__':
@@ -140,4 +136,5 @@ deskew
 modelscope
 filetype
 pdfplumber
+aiofiles
 ```
