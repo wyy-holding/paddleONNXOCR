@@ -1,8 +1,3 @@
-import asyncio
-import psutil
-from typing import Optional, Callable
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
 from paddleONNXOCR.utils import *
 
 
@@ -38,7 +33,7 @@ class PredictBase:
         self.session_options = session_options
         self.callable_func = callable_func
         self.executor: ThreadPoolExecutor = ThreadPoolExecutor(
-            max_workers=psutil.cpu_count()) if executor is None else executor
+            max_workers=os.cpu_count()) if executor is None else executor
         self.session = None
         self.input_names = None
         self.output_names = None
@@ -107,7 +102,7 @@ class PredictBase:
     async def predict_batch(
             self,
             img_list: List[numpy.ndarray],
-            max_concurrent: int = psutil.cpu_count()
+            max_concurrent: int = os.cpu_count()
     ) -> tuple[Any]:
         """
         批量推理
