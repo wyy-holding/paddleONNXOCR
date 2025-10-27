@@ -396,14 +396,10 @@ class PredictSystem:
         :param image: 输入图像（路径、numpy数组或PIL图像）
         :return: OCR结果列表和可选的裁剪图像列表
         """
-        if isinstance(image, str):
-            if await UtilsCommon.is_base64_image(image) is False:
-                file_info = await FileTypeDetector.get_info(image)
-                extension = file_info.get("extension", None)
-                if extension == "pdf":
-                    return await self.pdf_extractor.get_full_text(image)
-            else:
-                return await self.ocr(image)
+        if isinstance(image, str) and not await UtilsCommon.is_base64_image(image):
+            file_info = await FileTypeDetector.get_info(image)
+            if file_info.get("extension") == "pdf":
+                return await self.pdf_extractor.get_full_text(image)
         return await self.ocr(image)
 
     async def predict_batch(
