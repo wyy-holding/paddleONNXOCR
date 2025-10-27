@@ -1103,8 +1103,10 @@ class PDFExtractor:
 
     async def get_full_text(self, pdf_path: str) -> List[PdfPageResult]:
         """提取整个 PDF，返回每页的 PdfPageResult 列表"""
+        delete_pdf = False
         if validators.url(pdf_path):
             pdf_path = await file_downloader.download(pdf_path)
+            delete_pdf = True
         content = await self.extract_all_from_pdf(pdf_path)
         full_results: List[PdfPageResult] = []
         for page in content:
@@ -1118,5 +1120,6 @@ class PDFExtractor:
                     ocr_data=ocr_data
                 )
             )
-        os.remove(pdf_path)
+        if delete_pdf:
+            os.remove(pdf_path)
         return full_results
