@@ -23,9 +23,11 @@ dependencies = [
     "pillow",
     "validators",
     "aiohttp",
-    "psutil",
     "deskew",
-    "modelscope"
+    "modelscope",
+    "filetype",
+    "pdfplumber",
+    "pymupdf"
 ]
 license = "MIT"
 license-files = ["LICEN[CS]E*"]
