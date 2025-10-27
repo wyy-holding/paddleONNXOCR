@@ -27,7 +27,8 @@ dependencies = [
     "modelscope",
     "filetype",
     "pdfplumber",
-    "pymupdf"
+    "pymupdf",
+    "aiofiles"
 ]
 license = "MIT"
 license-files = ["LICEN[CS]E*"]
