@@ -1,11 +1,10 @@
 import asyncio
-import os
 import sys
 import cv2
 import json
 import numpy
 import onnxruntime
-import psutil
+import os
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from typing import List, Optional, Tuple, Union, AsyncGenerator
@@ -18,8 +17,8 @@ from paddleONNXOCR.predict.predict_det import TextDetector
 from paddleONNXOCR.predict.predict_rec import OCRRecognizer
 from paddleONNXOCR.predict.predict_doc_cls import DocumentOrientationDetector
 from paddleONNXOCR.predict.predict_uvdoc import DocumentRectifier
-from paddleONNXOCR.utils import TextBoxSorter
-from paddleONNXOCR.predict.ocr_dataclass import OCRChunkResult, OCRResult
+from paddleONNXOCR.utils import TextBoxSorter, PDFExtractor, FileTypeDetector, UtilsCommon
+from paddleONNXOCR.predict.ocr_dataclass import OCRChunkResult, OCRResult, PdfPageResult
 
 
 class PredictSystem:
@@ -52,6 +51,8 @@ class PredictSystem:
             providers: Optional[List[str]] = None,
             session_options: Optional[onnxruntime.SessionOptions] = None,
             executor: Optional[ThreadPoolExecutor] = None,
+            pdf_extractor: PDFExtractor = None,
+            pdf_table_format: str = "text",
             # 检测参数
             det_db_thresh: float = 0.3,
             det_db_box_thresh: float = 0.6,
@@ -88,6 +89,8 @@ class PredictSystem:
         :param providers: onnx providers，默认由于PaddleONNOCRXUtils.get_available_providers选择
         :param session_options: onnxruntime.SessionOptions对象
         :param executor: 线程池
+        :param pdf_extractor: pdf提取器
+        :param pdf_table_format: pdf文件中表格的返回形式，text|list
         :param det_db_thresh 文本检测阈值
         :param det_db_box_thresh 文本框阈值
         :param det_db_unclip_ratio 非裁剪比例
@@ -121,6 +124,8 @@ class PredictSystem:
         self.providers = providers
         self.session_options = session_options
         self.executor = executor
+        self.pdf_extractor = pdf_extractor
+        self.pdf_table_format = pdf_table_format
         self.det_db_thresh = det_db_thresh
         self.det_db_box_thresh = det_db_box_thresh
         self.det_db_unclip_ratio = det_db_unclip_ratio
@@ -234,6 +239,8 @@ class PredictSystem:
     async def __aenter__(self):
         """异步上下文管理器入口"""
         await self._init_models()
+        if self.pdf_extractor is None:
+            self.pdf_extractor = PDFExtractor(ocr_func=self.predict, table_format=self.pdf_table_format)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -327,22 +334,17 @@ class PredictSystem:
                 results.append((result["text"], result["score"]))
         return results
 
-    async def predict(
+    async def ocr(
             self,
-            image: Union[str, numpy.ndarray, Image.Image],
-    ) -> OCRResult:
-        """
-        对单张图像进行OCR
-        :param image: 输入图像（路径、numpy数组或PIL图像）
-        :return: OCR结果列表和可选的裁剪图像列表
-        """
+            image: Union[str, numpy.ndarray, Image.Image]
+    ) -> OCRResult | List[PdfPageResult]:
         numpy_image: numpy.ndarray = await ImageLoader.load_image(image)
+        if self.use_doc_cls:
+            numpy_image = await ImageRotate.doc_cls_rotate_image(numpy_image, self.doc_cls_model)
         if self.use_deskew:
             numpy_image = await ImageRotate.deskew_rotate_image(numpy_image)
         if self.use_uvdoc:
             numpy_image = await self.uvdoc_model.predict(numpy_image)
-        if self.use_doc_cls:
-            numpy_image = await ImageRotate.doc_cls_rotate_image(numpy_image, self.doc_cls_model)
         det_result = await self.det_model.predict(numpy_image)
         if det_result["num_boxes"] == 0:
             return OCRResult(image=numpy_image)
@@ -385,10 +387,54 @@ class PredictSystem:
             numpy_image.copy()
         )
 
+    async def predict(
+            self,
+            image: Union[str, numpy.ndarray, Image.Image],
+    ) -> OCRResult | List[PdfPageResult]:
+        """
+        对单张图像进行OCR
+        :param image: 输入图像（路径、numpy数组或PIL图像）
+        :return: OCR结果列表和可选的裁剪图像列表
+        """
+        if isinstance(image, str):
+            if await UtilsCommon.is_base64_image(image) is False:
+                file_info = await FileTypeDetector.get_info(image)
+                extension = file_info.get("extension", None)
+                if extension == "pdf":
+                    return await self.pdf_extractor.get_full_text(image)
+            else:
+                return await self.ocr(image)
+        return await self.ocr(image)
+
     async def predict_batch(
             self,
             images: List[Union[str, numpy.ndarray, Image.Image]],
-            max_concurrent: int = psutil.cpu_count()
+            max_concurrent: int = os.cpu_count()
+    ) -> List[OCRResult]:
+        """
+        批量处理多张图像
+        :param images: 图像列表
+        :param max_concurrent:  最大并发数
+        :return: 每张图像的OCR结果列表
+        """
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        async def process_with_semaphore(image):
+            async with semaphore:
+                try:
+                    ocr_result = await self.predict(image)
+                    return ocr_result
+                except Exception as e:
+                    raise Exception(e)
+
+        tasks = [process_with_semaphore(img) for img in images]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        return results
+
+    async def predict_batch_generator(
+            self,
+            images: List[Union[str, numpy.ndarray, Image.Image]],
+            max_concurrent: int = os.cpu_count()
     ) -> AsyncGenerator[OCRResult, None]:
         """
         批量处理多张图像
