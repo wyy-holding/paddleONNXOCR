@@ -5,14 +5,16 @@ from typing import Union
 from PIL import Image
 import aiohttp
 from io import BytesIO
-import base64
+
+from paddleONNXOCR.utils import UtilsCommon
 
 
 class ImageLoader:
     """图像下载类"""
-    headers={
+    headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
     }
+
     @staticmethod
     async def load_image(
             image_path: Union[str, numpy.ndarray, Image.Image]
@@ -31,15 +33,8 @@ class ImageLoader:
                             return numpy.array(pil_image.convert("RGB"))
                         except Exception as e:
                             raise ValueError(f"Failed to load image from URL: {str(e)}")
-            case str() if image_path.startswith(('data:image/', '/9j/', 'iVBOR')):
-                try:
-                    if image_path.startswith('data:image/'):
-                        image_path = image_path.split(',', 1)[1]
-                    image_data = base64.b64decode(image_path)
-                    pil_image = Image.open(BytesIO(image_data))
-                    return numpy.array(pil_image.convert("RGB"))
-                except Exception as e:
-                    raise ValueError(f"Failed to decode base64 image: {str(e)}")
+            case str() if await UtilsCommon.is_base64_image(image_path):
+                return await UtilsCommon.base64_to_numpy_rgb(image_path)
             case str():
                 return cv2.imread(image_path)
             case numpy.ndarray():
