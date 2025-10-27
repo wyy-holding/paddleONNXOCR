@@ -37,3 +37,11 @@ class OCRResult:
     json: str = ""
     results: List[OCRChunkResult] | None = None
     image: numpy.ndarray | None = None
+
+
+@dataclass
+class PdfPageResult:
+    """pdf结果"""
+    page_index: int = 0
+    text: str = ""
+    ocr_data: List[OCRResult] | None = None
