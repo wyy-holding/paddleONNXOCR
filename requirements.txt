@@ -5,7 +5,6 @@ onnxruntime
 pillow
 validators
 aiohttp
-psutil
 deskew
 modelscope
 pydantic
@@ -13,3 +12,6 @@ fastapi
 uvicorn
 gunicorn
 loguru
+filetype
+pdfplumber
+pymupdf
