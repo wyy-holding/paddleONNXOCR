@@ -222,21 +222,51 @@ class TextBoxSorter:
 
         total_width = all_x_max - all_x_min
         total_height = all_y_max - all_y_min
+        layout_ratio = total_width / total_height if total_height > 0 else 1
 
-        # 方法3: 分析文本框的平均宽高比
+        # 方法3: 分析文本框的平均宽高比（过滤掉极小的框）
+        # 过滤掉可能是单字或标点的小框
+        valid_boxes = [box for box in box_infos if box['width'] > 20 and box['height'] > 10]
+
+        if not valid_boxes:
+            valid_boxes = box_infos
+
         avg_aspect_ratio = numpy.mean([box['width'] / box['height'] if box['height'] > 0 else 1
-                                       for box in box_infos])
+                                       for box in valid_boxes])
 
-        # 综合判断
-        # 如果大部分文本框是横向的（宽>高），且整体布局也是横向的
-        if avg_aspect_ratio > 1.5 and horizontal_score > vertical_score:
+        # 方法4: 统计宽文本框（横向）vs 高文本框（纵向）的数量
+        wide_boxes = sum(1 for box in valid_boxes if box['width'] > box['height'] * 1.5)
+        tall_boxes = sum(1 for box in valid_boxes if box['height'] > box['width'] * 1.5)
+
+        # 综合判断（优化后的逻辑）
+
+        # 1. 如果整体布局明显是横向的（宽度 > 高度）
+        if layout_ratio > 1.3:
+            # 且大部分是宽文本框
+            if wide_boxes > tall_boxes or avg_aspect_ratio > 1.2:
+                return "horizontal"
+
+        # 2. 如果整体布局明显是纵向的（高度 > 宽度）
+        if layout_ratio < 0.7:
+            # 且大部分是窄文本框
+            if tall_boxes > wide_boxes or avg_aspect_ratio < 0.8:
+                return "vertical"
+
+        # 3. 根据位置关系得分判断
+        if horizontal_score > vertical_score * 2:
             return "horizontal"
 
-        # 如果文本框较窄（高>宽），或者垂直排列特征明显
-        if avg_aspect_ratio < 0.7 or vertical_score > horizontal_score * 1.5:
+        if vertical_score > horizontal_score * 2:
             return "vertical"
 
-        # 默认返回横向
+        # 4. 根据文本框形状判断
+        if avg_aspect_ratio > 1.5 or wide_boxes > tall_boxes * 1.5:
+            return "horizontal"
+
+        if avg_aspect_ratio < 0.7 or tall_boxes > wide_boxes * 1.5:
+            return "vertical"
+
+        # 默认返回横向（大多数文档都是横向的）
         return "horizontal"
 
     @staticmethod
