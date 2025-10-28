@@ -25,7 +25,6 @@ async def main():
             "https://wx2.sinaimg.cn/mw690/005AKOR6ly1hvv14x3e1rj30j615hwfl.jpg"
         )
         print(ocr_result.text)
-        print(ocr_result.json)
 
 
 if __name__ == '__main__':
