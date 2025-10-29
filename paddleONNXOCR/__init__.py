@@ -10,7 +10,7 @@ from paddleONNXOCR.predict.predict_table_cell import TableCellDetector
 from paddleONNXOCR.predict.predict_table_cls import TableClassifier
 
 __author__ = 'wyy-holding'
-__version__ = '0.0.10'
+__version__ = '0.0.11'
 __all__ = [
     "PredictSystem",
     "TextLineOrientationDetector",
