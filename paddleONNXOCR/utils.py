@@ -155,7 +155,7 @@ class TextBoxSorter:
         自动检测文本布局方向
 
         Args:
-            boxes: 文本框列表
+            boxes: 文本框列表，每个框是4个点的坐标 [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
 
         Returns:
             "horizontal" 或 "vertical"
@@ -183,38 +183,7 @@ class TextBoxSorter:
                 'height': y_max - y_min
             })
 
-        # 方法1: 分析相邻框的位置关系
-        horizontal_score = 0
-        vertical_score = 0
-
-        for i in range(len(box_infos)):
-            for j in range(i + 1, len(box_infos)):
-                box1 = box_infos[i]
-                box2 = box_infos[j]
-
-                # 计算两个框的相对位置
-                dx = abs(box1['cx'] - box2['cx'])
-                dy = abs(box1['cy'] - box2['cy'])
-
-                # 计算Y轴重叠
-                y_overlap = min(box1['y_max'], box2['y_max']) - max(box1['y_min'], box2['y_min'])
-                y_overlap_ratio = y_overlap / min(box1['height'], box2['height']) if min(box1['height'],
-                                                                                         box2['height']) > 0 else 0
-
-                # 计算X轴重叠
-                x_overlap = min(box1['x_max'], box2['x_max']) - max(box1['x_min'], box2['x_min'])
-                x_overlap_ratio = x_overlap / min(box1['width'], box2['width']) if min(box1['width'],
-                                                                                       box2['width']) > 0 else 0
-
-                # 如果Y轴有较大重叠且X轴距离较大，可能是横向布局
-                if y_overlap_ratio > 0.5 and dx > dy:
-                    horizontal_score += 1
-
-                # 如果X轴有较大重叠且Y轴距离较大，可能是纵向布局
-                if x_overlap_ratio > 0.5 and dy > dx:
-                    vertical_score += 1
-
-        # 方法2: 分析整体布局的宽高比
+        # === 方法1: 整体布局宽高比 ===
         all_x_min = min(box['x_min'] for box in box_infos)
         all_x_max = max(box['x_max'] for box in box_infos)
         all_y_min = min(box['y_min'] for box in box_infos)
@@ -222,51 +191,65 @@ class TextBoxSorter:
 
         total_width = all_x_max - all_x_min
         total_height = all_y_max - all_y_min
-        layout_ratio = total_width / total_height if total_height > 0 else 1
+        layout_ratio = total_width / total_height if total_height > 0 else 1.0
 
-        # 方法3: 分析文本框的平均宽高比（过滤掉极小的框）
-        # 过滤掉可能是单字或标点的小框
-        valid_boxes = [box for box in box_infos if box['width'] > 20 and box['height'] > 10]
+        # 强横向或强纵向可直接返回
+        if layout_ratio > 1.6:
+            return "horizontal"
+        if layout_ratio < 0.6:
+            return "vertical"
 
+        # === 方法2: 过滤有效文本框（排除标点、页码等小框）===
+        # 根据你的数据，正文宽度通常 > 50，高度 > 15
+        valid_boxes = [box for box in box_infos if box['width'] > 50 and box['height'] > 15]
         if not valid_boxes:
-            valid_boxes = box_infos
+            valid_boxes = box_infos  # 退化处理
 
-        avg_aspect_ratio = numpy.mean([box['width'] / box['height'] if box['height'] > 0 else 1
-                                       for box in valid_boxes])
+        # 计算平均宽高比
+        aspect_ratios = [box['width'] / box['height'] if box['height'] > 0 else 1.0 for box in valid_boxes]
+        avg_aspect_ratio = float(numpy.mean(aspect_ratios))
 
-        # 方法4: 统计宽文本框（横向）vs 高文本框（纵向）的数量
-        wide_boxes = sum(1 for box in valid_boxes if box['width'] > box['height'] * 1.5)
-        tall_boxes = sum(1 for box in valid_boxes if box['height'] > box['width'] * 1.5)
+        wide_boxes = sum(1 for box in valid_boxes if box['width'] > box['height'] * 1.3)
+        tall_boxes = sum(1 for box in valid_boxes if box['height'] > box['width'] * 1.3)
 
-        # 综合判断（优化后的逻辑）
-
-        # 1. 如果整体布局明显是横向的（宽度 > 高度）
-        if layout_ratio > 1.3:
-            # 且大部分是宽文本框
-            if wide_boxes > tall_boxes or avg_aspect_ratio > 1.2:
-                return "horizontal"
-
-        # 2. 如果整体布局明显是纵向的（高度 > 宽度）
-        if layout_ratio < 0.7:
-            # 且大部分是窄文本框
-            if tall_boxes > wide_boxes or avg_aspect_ratio < 0.8:
-                return "vertical"
-
-        # 3. 根据位置关系得分判断
-        if horizontal_score > vertical_score * 2:
+        # 基于形状判断
+        if avg_aspect_ratio > 1.4 or wide_boxes > tall_boxes * 1.2:
             return "horizontal"
-
-        if vertical_score > horizontal_score * 2:
+        if avg_aspect_ratio < 0.7 or tall_boxes > wide_boxes * 1.2:
             return "vertical"
 
-        # 4. 根据文本框形状判断
-        if avg_aspect_ratio > 1.5 or wide_boxes > tall_boxes * 1.5:
-            return "horizontal"
+        # === 方法3: 位置关系得分（仅当上述不确定时使用）===
+        horizontal_score = 0
+        vertical_score = 0
 
-        if avg_aspect_ratio < 0.7 or tall_boxes > wide_boxes * 1.5:
+        for i in range(len(box_infos)):
+            for j in range(i + 1, len(box_infos)):
+                b1, b2 = box_infos[i], box_infos[j]
+                dx = abs(b1['cx'] - b2['cx'])
+                dy = abs(b1['cy'] - b2['cy'])
+
+                # Y轴重叠率（用于判断是否同行）
+                y_overlap = max(0, min(b1['y_max'], b2['y_max']) - max(b1['y_min'], b2['y_min']))
+                min_h = min(b1['height'], b2['height'])
+                y_overlap_ratio = y_overlap / min_h if min_h > 0 else 0
+
+                # X轴重叠率（用于判断是否同列）
+                x_overlap = max(0, min(b1['x_max'], b2['x_max']) - max(b1['x_min'], b2['x_min']))
+                min_w = min(b1['width'], b2['width'])
+                x_overlap_ratio = x_overlap / min_w if min_w > 0 else 0
+
+                if y_overlap_ratio > 0.5 and dx > dy:
+                    horizontal_score += 1
+                if x_overlap_ratio > 0.5 and dy > dx:
+                    vertical_score += 1
+
+        # 仅当得分差异显著时才信任
+        if horizontal_score > vertical_score * 1.5:
+            return "horizontal"
+        if vertical_score > horizontal_score * 1.5:
             return "vertical"
 
-        # 默认返回横向（大多数文档都是横向的）
+        # === 默认：横向（绝大多数文档为横向）===
         return "horizontal"
 
     @staticmethod
@@ -355,53 +338,35 @@ class TextBoxSorter:
     def _group_by_rows(
             box_infos: List[Dict]
     ) -> List[List[Dict]]:
-        """
-        将文本框按行分组
-
-        Args:
-            box_infos: 包含框信息的字典列表
-
-        Returns:
-            按行分组的框信息列表
-        """
         if not box_infos:
             return []
 
-        # 按y_min排序
-        box_infos.sort(key=lambda x: x['y_min'])
+        # 按垂直中心 cy 排序
+        box_infos.sort(key=lambda x: x['cy'])
 
+        # 估计行高：取所有框高度的中位数或均值
+        heights = [box['height'] for box in box_infos]
+        median_height = float(numpy.median(heights)) if heights else 20.0
+        row_threshold = min(median_height * 0.5, 20.0)
         rows = []
         current_row = [box_infos[0]]
-        current_row_y_min = box_infos[0]['y_min']
-        current_row_y_max = box_infos[0]['y_max']
-
-        for box_info in box_infos[1:]:
-            # 计算与当前行的重叠度
-            overlap_threshold = 0.5  # 重叠阈值
-
-            # 计算Y方向的重叠
-            y_overlap = min(current_row_y_max, box_info['y_max']) - max(current_row_y_min, box_info['y_min'])
-            box_height = box_info['height']
-
-            # 如果重叠度足够高，认为是同一行
-            if y_overlap > box_height * overlap_threshold:
-                current_row.append(box_info)
-                # 更新当前行的边界
-                current_row_y_min = min(current_row_y_min, box_info['y_min'])
-                current_row_y_max = max(current_row_y_max, box_info['y_max'])
+        for box in box_infos[1:]:
+            # 如果当前框的 cy 与当前行最后一个框的 cy 差距小于阈值，则归入该行
+            last_box = current_row[-1]
+            if abs(box['cy'] - last_box['cy']) <= row_threshold:
+                current_row.append(box)
             else:
-                # 开始新的一行
                 rows.append(current_row)
-                current_row = [box_info]
-                current_row_y_min = box_info['y_min']
-                current_row_y_max = box_info['y_max']
+                current_row = [box]
 
-        # 添加最后一行
         if current_row:
             rows.append(current_row)
 
-        return rows
+        # 对每一行内部按 x_min 排序（已在 sort_horizontal 中做，但这里也可做）
+        for row in rows:
+            row.sort(key=lambda x: x['x_min'])
 
+        return rows
     @staticmethod
     def _sort_vertical(
             boxes: List[List[List[float]]],
