@@ -339,10 +339,10 @@ class PredictSystem:
             image: Union[str, numpy.ndarray, Image.Image]
     ) -> OCRResult:
         numpy_image: numpy.ndarray = await ImageLoader.load_image(image)
-        if self.use_doc_cls:
-            numpy_image = await ImageRotate.doc_cls_rotate_image(numpy_image, self.doc_cls_model)
         if self.use_deskew:
             numpy_image = await ImageRotate.deskew_rotate_image(numpy_image)
+        if self.use_doc_cls:
+            numpy_image = await ImageRotate.doc_cls_rotate_image(numpy_image, self.doc_cls_model)
         if self.use_uvdoc:
             numpy_image = await self.uvdoc_model.predict(numpy_image)
         det_result = await self.det_model.predict(numpy_image)
