@@ -947,6 +947,57 @@ class PDFExtractor:
             except Exception:
                 return None
 
+    def _is_scanned_page(self, page, plumber_page) -> bool:
+        """判断页面是否为扫描件"""
+        # 方法1：检查文本内容
+        text = page.get_text().strip()
+        if len(text) < 10:  # 几乎没有可提取文本
+            return True
+
+        # 方法2：检查图像覆盖率
+        page_rect = page.rect
+        page_area = page_rect.width * page_rect.height
+
+        image_info = page.get_images(full=True)
+        total_image_area = 0
+        for img in image_info:
+            try:
+                bbox = page.get_image_bbox(img)
+                if not bbox.is_empty:
+                    img_area = (bbox.x1 - bbox.x0) * (bbox.y1 - bbox.y0)
+                    total_image_area += img_area
+            except:
+                continue
+
+        # 如果图像覆盖超过80%的页面，认为是扫描件
+        if total_image_area / page_area > 0.8:
+            return True
+
+        return False
+
+    def _render_page_as_image(self, page) -> Optional[numpy.ndarray]:
+        """将整页渲染为图片"""
+        try:
+            # 使用较高的DPI以保证清晰度
+            mat = fitz.Matrix(2.0, 2.0)  # 2倍缩放，相当于144 DPI
+            pix = page.get_pixmap(matrix=mat, alpha=False)
+
+            # 转换为numpy数组
+            img = numpy.frombuffer(pix.samples, dtype=numpy.uint8).reshape(
+                pix.height, pix.width, pix.n
+            )
+
+            # 转换为RGB
+            if pix.n == 4:  # RGBA
+                img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
+            elif pix.n == 1:  # 灰度
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+
+            return img
+        except Exception as e:
+            print(f"Error rendering page: {e}")
+            return None
+
     def _process_single_page(self, pdf_path: str, page_num: int) -> Dict[str, Any]:
         """同步处理单页（仅提取原始数据，不执行 OCR）"""
         doc = fitz.open(pdf_path)
@@ -956,6 +1007,25 @@ class PDFExtractor:
                 plumber_page = pdf.pages[page_num]
                 page_elements = []
 
+                # ✅ 新增：检查是否为扫描件
+                if self._is_scanned_page(page, plumber_page):
+                    # 整页渲染为一张图
+                    img_array = self._render_page_as_image(page)
+                    if img_array is not None:
+                        page_rect = page.rect
+                        page_elements.append({
+                            "type": "image",
+                            "bbox": (page_rect.x0, page_rect.y0, page_rect.x1, page_rect.y1),
+                            "data": img_array,
+                            "position": page_rect.y0,
+                            "is_full_page": True  # 标记为整页图片
+                        })
+                    return {
+                        "page": page_num + 1,
+                        "elements": page_elements
+                    }
+
+                # 原有的处理逻辑（表格、图像、文本）
                 # --- 1. 提取表格 ---
                 tables = plumber_page.find_tables()
                 for table in tables:
@@ -967,7 +1037,7 @@ class PDFExtractor:
                         "data": table_data,
                         "position": bbox[1]
                     })
-                # --- 2. 提取图像（仅保存图像数组，不 OCR）---
+                # --- 2. 提取图像 ---
                 image_info = page.get_images(full=True)
                 for img in image_info:
                     xref = img[0]
@@ -985,9 +1055,10 @@ class PDFExtractor:
                         "type": "image",
                         "bbox": (x0, y0, x1, y1),
                         "data": img_array,
-                        "position": y0
+                        "position": y0,
+                        "is_full_page": False
                     })
-                # --- 3. 提取文本块（排除表格区域）---
+                # --- 3. 提取文本块 ---
                 blocks = page.get_text("dict")["blocks"]
                 for block in blocks:
                     if "lines" not in block:
