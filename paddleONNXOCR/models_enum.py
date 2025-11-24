@@ -30,3 +30,4 @@ class ImageModels(Enum):
     DOC_LAYOUT_L = "PP-DocLayout-L.onnx"
     DOC_LAYOUT_PLUS_L = "PP-DocLayout_plus-L.onnx"
     DOC_BLOCK_LAYOUT = "PP-DocBlockLayout.onnx"
+    TABLE_LAYOUT_PICODET = "PicoDet_layout_1x_table.onnx"
