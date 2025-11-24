@@ -3,13 +3,12 @@ import os
 import cv2
 import numpy
 from typing import List
-from paddleONNXOCR import (
-    PredictSystem,
-    TableClassifier,
-    TableCellDetector,
-    TableModels,
-    DocumentOrientationDetector
-)
+
+from paddleONNXOCR.models_enum import TableModels
+from paddleONNXOCR.predict.predict_doc_cls import DocumentOrientationDetector
+from paddleONNXOCR.predict.predict_system import PredictSystem
+from paddleONNXOCR.predict.predict_table_cls import TableClassifier
+from paddleONNXOCR.predict.predict_table_cell import TableCellDetector
 from paddleONNXOCR.predict.predict_table import TableDetector
 from paddleONNXOCR.utils import TableHTMLGenerator
 from paddleONNXOCR.image_rotate import ImageRotate
@@ -169,6 +168,8 @@ async def main():
             print(f"置信度: {result['score']:.3f}")
             print(f"HTML:\n{result['html']}")
 
+
 if __name__ == '__main__':
     import asyncio
+
     asyncio.run(main())
