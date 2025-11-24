@@ -4,6 +4,7 @@ from paddleONNXOCR.predict.predict_cls import TextLineOrientationDetector
 from paddleONNXOCR.predict.predict_det import TextDetector
 from paddleONNXOCR.predict.predict_rec import OCRRecognizer
 from paddleONNXOCR.predict.predict_doc_cls import DocumentOrientationDetector
+from paddleONNXOCR.predict.predict_table_html import ImageTableToHTML
 from paddleONNXOCR.predict.predict_uvdoc import DocumentRectifier
 from paddleONNXOCR.predict.predict_layout import LayoutDetection
 from paddleONNXOCR.predict.predict_table_cell import TableCellDetector
@@ -25,5 +26,6 @@ __all__ = [
     "ImageModels",
     "LayoutDetection",
     "TableCellDetector",
-    "TableClassifier"
+    "TableClassifier",
+    "ImageTableToHTML"
 ]
