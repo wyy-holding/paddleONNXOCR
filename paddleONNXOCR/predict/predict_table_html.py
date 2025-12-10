@@ -1,10 +1,17 @@
 import os
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 import cv2
 import numpy
-from typing import List
+from typing import List, Union, Optional
 
-from paddleONNXOCR.models_enum import TableModels
+import onnxruntime
+from PIL import Image
+from paddleONNXOCR.predict.predict_uvdoc import DocumentRectifier
+from paddleONNXOCR.image_loader import ImageLoader
+from paddleONNXOCR.models_enum import TableModels, ImageModels
+from paddleONNXOCR.predict.ocr_dataclass import TableHtml
 from paddleONNXOCR.predict.predict_doc_cls import DocumentOrientationDetector
 from paddleONNXOCR.predict.predict_system import PredictSystem
 from paddleONNXOCR.predict.predict_table_cls import TableClassifier
@@ -25,9 +32,19 @@ class ImageTableToHTML:
             table_cell_detector_wired: TableCellDetector = None,
             table_cell_detector_wireless: TableCellDetector = None,
             doc_cls_model: DocumentOrientationDetector = None,
+            uvdoc_model: DocumentRectifier = None,
+            uvdoc_model_name: ImageModels = ImageModels.UVDOC,
+            uvdoc_model_path: str | None = None,
+            model_local_dir: str = "models",
+            providers: Optional[List[str]] = None,
+            session_options: Optional[onnxruntime.SessionOptions] = None,
+            executor: Optional[ThreadPoolExecutor] = None,
             # 如果需要自定义表格检测模型
             table_detection_model_path: str = None,
-            score_threshold: float = 0.5
+            score_threshold: float = 0.5,
+            use_deskew: bool = False,
+            use_doc_cls: bool = True,
+            use_uvdoc: bool = False,
     ):
         self.table_detector = table_detector
         self.ocr_system = ocr_system
@@ -35,13 +52,34 @@ class ImageTableToHTML:
         self.table_cell_detector_wired = table_cell_detector_wired
         self.table_cell_detector_wireless = table_cell_detector_wireless
         self.doc_cls_model = doc_cls_model
+        self.uvdoc_model = uvdoc_model
+        self.uvdoc_model_name = uvdoc_model_name
+        self.uvdoc_model_path = uvdoc_model_path
+        self.model_local_dir = model_local_dir
+        self.providers = providers
+        self.session_options = session_options
+        self.executor = executor
         self.table_detection_model_path = table_detection_model_path
         self.score_threshold = score_threshold
+        self.use_deskew = use_deskew
+        self.use_doc_cls = use_doc_cls
+        self.use_uvdoc = use_uvdoc
 
     async def __aenter__(self):
         if self.doc_cls_model is None:
             self.doc_cls_model = DocumentOrientationDetector()
             await self.doc_cls_model.__aenter__()
+        if self.use_uvdoc:
+            if self.uvdoc_model is None:
+                self.uvdoc_model = DocumentRectifier(
+                    model_name=self.uvdoc_model_name,
+                    model_path=self.uvdoc_model_path,
+                    model_local_dir=self.model_local_dir,
+                    providers=self.providers,
+                    session_options=self.session_options,
+                    executor=self.executor
+                )
+            await self.uvdoc_model.__aenter__()
         if self.table_detector is None:
             self.table_detector = TableDetector(
                 model_path=self.table_detection_model_path,
@@ -98,53 +136,46 @@ class ImageTableToHTML:
         html_output = html_generator.generate_html()
         return html_output
 
-    async def predict(
+    async def ocr_table(
             self,
-            image: numpy.ndarray
-    ) -> List[dict]:
-        """
-        处理图像，检测表格并转换为HTML
-
-        参数:
-            image: 输入图像
-
-        返回:
-            List[dict]: 每个元素包含:
-                - 'bbox': (x1, y1, x2, y2) 表格位置
-                - 'html': str 表格的HTML代码
-        """
-        image = await ImageRotate.doc_cls_rotate_image(image, self.doc_cls_model)
-        detection_result = await self.table_detector.predict(image)
+            image: Union[str, numpy.ndarray, Image.Image]
+    ):
+        numpy_image: numpy.ndarray = await ImageLoader.load_image(image)
+        if self.use_deskew:
+            numpy_image = await ImageRotate.deskew_rotate_image(numpy_image)
+        if self.use_doc_cls:
+            numpy_image = await ImageRotate.doc_cls_rotate_image(numpy_image, self.doc_cls_model)
+        if self.use_uvdoc:
+            numpy_image = await self.uvdoc_model.predict(numpy_image)
+        detection_result = await self.table_detector.predict(numpy_image)
         table_boxes = detection_result['boxes']
         results = []
         for box_info in table_boxes:
             x1, y1, x2, y2 = box_info['bbox']
-            table_patch = image[y1:y2, x1:x2].copy()
+            table_patch = numpy_image[y1:y2, x1:x2].copy()
             if table_patch.size == 0:
                 continue
             html_output = await self._convert_table_to_html(table_patch)
-            results.append({
-                'bbox': (x1, y1, x2, y2),
-                'score': box_info['score'],
-                'html': html_output
-            })
+            results.append(
+                TableHtml(
+                    bbox=(x1, y1, x2, y2),
+                    score=box_info['score'],
+                    html=html_output
+                )
+            )
         return results
+
+    async def predict(
+            self,
+            image: Union[str, numpy.ndarray, Image.Image]
+    ) -> List[TableHtml]:
+        return await self.ocr_table(image)
 
     async def predict_batch(
             self,
-            images: List[numpy.ndarray],
+            images: List[Union[str, numpy.ndarray, Image.Image]],
             max_concurrent: int = os.cpu_count()
-    ) -> List[List[dict]]:
-        """
-        批量处理多张图像
-
-        参数:
-            images: 图像列表
-            max_concurrent: 最大并发数
-
-        返回:
-            List[List[dict]]: 每张图像的表格检测结果列表
-        """
+    ) -> List[List[TableHtml]]:
         semaphore = asyncio.Semaphore(max_concurrent)
 
         async def process_with_semaphore(image):
@@ -155,21 +186,21 @@ class ImageTableToHTML:
         results = await asyncio.gather(*tasks, return_exceptions=True)
         return results
 
-
-async def main():
-    image = cv2.imread("1.jpg")
-    if image is None:
-        raise FileNotFoundError("无法读取图像")
-    async with ImageTableToHTML() as processor:
-        results = await processor.predict(image)
-        for i, result in enumerate(results):
-            print(f"\n=== 表格 {i + 1} ===")
-            print(f"位置: {result['bbox']}")
-            print(f"置信度: {result['score']:.3f}")
-            print(f"HTML:\n{result['html']}")
-
-
-if __name__ == '__main__':
-    import asyncio
-
-    asyncio.run(main())
+#
+# async def main():
+#     image = cv2.imread("1.jpg")
+#     if image is None:
+#         raise FileNotFoundError("无法读取图像")
+#     async with ImageTableToHTML() as processor:
+#         results = await processor.predict(image)
+#         for i, result in enumerate(results):
+#             print(f"\n=== 表格 {i + 1} ===")
+#             print(f"位置: {result['bbox']}")
+#             print(f"置信度: {result['score']:.3f}")
+#             print(f"HTML:\n{result['html']}")
+#
+#
+# if __name__ == '__main__':
+#     import asyncio
+#
+#     asyncio.run(main())

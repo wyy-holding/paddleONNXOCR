@@ -7,7 +7,7 @@ import onnxruntime
 import os
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
-from typing import List, Optional, Tuple, Union, AsyncGenerator
+from typing import List, Optional, Tuple, Union
 from concurrent.futures import ThreadPoolExecutor
 from paddleONNXOCR.image_loader import ImageLoader
 from paddleONNXOCR.image_rotate import ImageRotate

@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Union
 
-from paddleONNXOCR.predict.ocr_dataclass import OCRResult, PdfResult
+from paddleONNXOCR.predict.ocr_dataclass import OCRResult, PdfResult, TableHtml
 from pydantic import BaseModel, Field
 
 from paddleONNXOCR.predict.predict_system import OCRChunkResult
@@ -23,4 +23,4 @@ class OCRInput(BaseModel):
 
 
 class OCRResponse(BaseResponse):
-    data: List[Union[OCRResult, PdfResult]] = Field(default=[], description="ocr列表识别结果")
+    data: List[Union[OCRResult, PdfResult,List[TableHtml]]] = Field(default=[], description="ocr列表识别结果")

@@ -1,7 +1,6 @@
 import json
-import numpy
 from dataclasses import dataclass, asdict
-from typing import List
+from typing import List, Tuple
 
 
 @dataclass
@@ -36,6 +35,7 @@ class OCRResult:
     text: str = ""
     results: List[OCRChunkResult] | None = None
 
+
 @dataclass
 class PdfPageResult:
     """pdf结果"""
@@ -48,3 +48,10 @@ class PdfPageResult:
 class PdfResult:
     text: str = ""
     results: List[PdfPageResult] | None = None
+
+
+@dataclass
+class TableHtml:
+    bbox: Tuple[float, float, float, float]
+    score: float
+    html: str
