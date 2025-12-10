@@ -72,6 +72,18 @@ async def main():
 # 外部拿到实力调用推理，参考api/__init__.py中的lifespan
 ```
 
+图片中表格转html
+```python
+from paddleONNXOCR import ImageTableToHTML
+async def main():
+    async with ImageTableToHTML() as predictor:
+        result = predictor.predict("test.jpg")
+        print(result)
+if __name__ == '__main__':
+    import asyncio
+    asyncio.run(main())
+```
+
 默认情况下，会自动从modelscope下载以下模型:
 
 ```
